@@ -1,4 +1,4 @@
-import { Label, Repos } from '../types';
+import { Repos } from '../types';
 
 export interface ChangeInfo {
   type: 'added' | 'updated' | 'removed';

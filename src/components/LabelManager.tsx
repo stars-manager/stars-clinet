@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Button from 'tdesign-react/es/button';
 import Space from 'tdesign-react/es/space';
 import Input from 'tdesign-react/es/input';
 import Dialog from 'tdesign-react/es/dialog';
 import Tag from 'tdesign-react/es/tag';
+import Tabs from 'tdesign-react/es/tabs';
 import { MessagePlugin } from 'tdesign-react/es/message';
 import 'tdesign-react/es/button/style/css.js';
 import 'tdesign-react/es/space/style/css.js';
 import 'tdesign-react/es/input/style/css.js';
 import 'tdesign-react/es/dialog/style/css.js';
 import 'tdesign-react/es/tag/style/css.js';
+import 'tdesign-react/es/tabs/style/css.js';
 import 'tdesign-react/es/message/style/css.js';
 import { useAppStore } from '../stores/app';
 import { Label } from '../types';
@@ -38,6 +40,26 @@ export const LabelManager: React.FC<LabelManagerProps> = ({ onClose }) => {
   const [editingLabel, setEditingLabel] = useState<Label | null>(null);
   const [name, setName] = useState('');
   const [color, setColor] = useState(PRESET_COLORS[0]);
+  const [activeTab, setActiveTab] = useState<'all' | 'custom' | 'generated'>('all');
+
+  // 按类型分组标签
+  const groupedLabels = useMemo(() => {
+    const custom = labels.filter(l => l.type === 'custom' || !l.type);
+    const generated = labels.filter(l => l.type === 'generated');
+    return { custom, generated };
+  }, [labels]);
+
+  // 根据当前标签页过滤标签
+  const filteredLabels = useMemo(() => {
+    switch (activeTab) {
+      case 'custom':
+        return groupedLabels.custom;
+      case 'generated':
+        return groupedLabels.generated;
+      default:
+        return labels;
+    }
+  }, [activeTab, labels, groupedLabels]);
 
   const getLabelCount = (labelId: string): number => {
     return Object.values(repos).filter(repo => repo.labels.includes(labelId)).length;
@@ -48,7 +70,7 @@ export const LabelManager: React.FC<LabelManagerProps> = ({ onClose }) => {
       MessagePlugin.warning('请输入标签名称');
       return;
     }
-    addLabel(name.trim(), color);
+    addLabel(name.trim(), color, 'custom');
     setName('');
     setColor(PRESET_COLORS[0]);
     setShowAddDialog(false);
@@ -131,6 +153,82 @@ export const LabelManager: React.FC<LabelManagerProps> = ({ onClose }) => {
     </div>
   );
 
+  const renderLabelCard = (label: Label) => {
+    const count = getLabelCount(label.id);
+    return (
+      <div
+        key={label.id}
+        style={{
+          padding: '16px',
+          border: '1px solid #e7e7e7',
+          borderRadius: '8px',
+          transition: 'all 0.2s',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div
+              style={{
+                width: '20px',
+                height: '20px',
+                backgroundColor: label.color,
+                borderRadius: '4px',
+              }}
+            />
+            <span style={{ fontSize: '16px', fontWeight: 500 }}>{label.name}</span>
+            {label.type === 'generated' && (
+              <Tag size="small" theme="primary" variant="light">
+                AI 生成
+              </Tag>
+            )}
+          </div>
+          <Space size="small">
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => handleEdit(label)}
+              title="编辑标签名称和颜色"
+            >
+              编辑
+            </Button>
+            <Button
+              size="small"
+              variant="text"
+              theme="danger"
+              onClick={() => handleDelete(label)}
+              title="删除该标签"
+            >
+              删除
+            </Button>
+          </Space>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Tag theme="primary" variant="light">
+            {count} 个项目
+          </Tag>
+          <div
+            style={{
+              flex: 1,
+              height: '4px',
+              backgroundColor: '#f5f5f5',
+              borderRadius: '2px',
+            }}
+          >
+            <div
+              style={{
+                width: `${Math.min(100, (count / Math.max(...labels.map(l => getLabelCount(l.id)))) * 100)}%`,
+                height: '100%',
+                backgroundColor: label.color,
+                borderRadius: '2px',
+                transition: 'width 0.3s',
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
       {/* 背景遮罩 */}
@@ -173,83 +271,50 @@ export const LabelManager: React.FC<LabelManagerProps> = ({ onClose }) => {
           </Space>
         </div>
 
-        {labels.length === 0 ? (
+        {/* 标签分类统计 */}
+        <div style={{ 
+          marginBottom: '20px',
+          padding: '12px 16px',
+          background: '#f5f5f5',
+          borderRadius: '8px',
+          display: 'flex',
+          gap: '24px'
+        }}>
+          <div>
+            <span style={{ color: '#666' }}>总计：</span>
+            <span style={{ fontWeight: 500 }}>{labels.length}</span>
+          </div>
+          <div>
+            <span style={{ color: '#666' }}>个人标签：</span>
+            <span style={{ fontWeight: 500, color: '#0052D9' }}>{groupedLabels.custom.length}</span>
+          </div>
+          <div>
+            <span style={{ color: '#666' }}>AI 生成：</span>
+            <span style={{ fontWeight: 500, color: '#2BA47D' }}>{groupedLabels.generated.length}</span>
+          </div>
+        </div>
+
+        {/* 标签分类 Tab */}
+        <Tabs
+          value={activeTab}
+          onChange={(value) => setActiveTab(value as 'all' | 'custom' | 'generated')}
+          style={{ marginBottom: '20px' }}
+        >
+          <Tabs.TabPanel value="all" label={`全部 (${labels.length})`} />
+          <Tabs.TabPanel value="custom" label={`个人标签 (${groupedLabels.custom.length})`} />
+          <Tabs.TabPanel value="generated" label={`AI 生成 (${groupedLabels.generated.length})`} />
+        </Tabs>
+
+        {filteredLabels.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 20px', color: '#999' }}>
-            <p style={{ fontSize: '16px', marginBottom: '8px' }}>暂无标签</p>
+            <p style={{ fontSize: '16px', marginBottom: '8px' }}>
+              {activeTab === 'all' ? '暂无标签' : activeTab === 'custom' ? '暂无个人标签' : '暂无 AI 生成的标签'}
+            </p>
             <p style={{ fontSize: '14px' }}>点击"新建标签"创建你的第一个标签</p>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-            {labels.map(label => {
-              const count = getLabelCount(label.id);
-              return (
-                <div
-                  key={label.id}
-                  style={{
-                    padding: '16px',
-                    border: '1px solid #e7e7e7',
-                    borderRadius: '8px',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div
-                        style={{
-                          width: '20px',
-                          height: '20px',
-                          backgroundColor: label.color,
-                          borderRadius: '4px',
-                        }}
-                      />
-                      <span style={{ fontSize: '16px', fontWeight: 500 }}>{label.name}</span>
-                    </div>
-                    <Space size="small">
-                      <Button
-                        size="small"
-                        variant="text"
-                        onClick={() => handleEdit(label)}
-                        title="编辑标签名称和颜色"
-                      >
-                        编辑
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="text"
-                        theme="danger"
-                        onClick={() => handleDelete(label)}
-                        title="删除该标签"
-                      >
-                        删除
-                      </Button>
-                    </Space>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Tag theme="primary" variant="light">
-                      {count} 个项目
-                    </Tag>
-                    <div
-                      style={{
-                        flex: 1,
-                        height: '4px',
-                        backgroundColor: '#f5f5f5',
-                        borderRadius: '2px',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: `${Math.min(100, (count / Math.max(...labels.map(l => getLabelCount(l.id)))) * 100)}%`,
-                          height: '100%',
-                          backgroundColor: label.color,
-                          borderRadius: '2px',
-                          transition: 'width 0.3s',
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {filteredLabels.map(renderLabelCard)}
           </div>
         )}
       </div>

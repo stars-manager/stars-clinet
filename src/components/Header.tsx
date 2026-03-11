@@ -13,6 +13,7 @@ import 'tdesign-react/es/tag/style/css.js';
 import 'tdesign-react/es/message/style/css.js';
 import { useAppStore } from '../stores/app';
 import { SyncSettings } from './SyncSettings';
+import { AutoTagger } from './AutoTagger';
 import { calculateIncrementalChanges, formatChangeSummary, IncrementalStats } from '../utils/incrementalChanges';
 
 interface HeaderProps {
@@ -30,11 +31,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLabelManager }) => {
     syncing,
     syncRepo,
     labels,
+    stars,
   } = store;
 
   const [showTokenModal, setShowTokenModal] = useState(false);
   const [showSyncSettings, setShowSyncSettings] = useState(false);
   const [showPushConfirm, setShowPushConfirm] = useState(false);
+  const [showAutoTagger, setShowAutoTagger] = useState(false);
   const [inputToken, setInputToken] = useState(token);
   const [incrementalStats, setIncrementalStats] = useState<IncrementalStats | null>(null);
 
@@ -195,6 +198,16 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLabelManager }) => {
           同步 Stars
         </Button>
 
+        {/* 自动标签 */}
+        <Button 
+          theme="primary"
+          onClick={() => setShowAutoTagger(true)} 
+          title="使用 AI 自动为项目生成标签"
+          disabled={stars.length === 0}
+        >
+          自动标签
+        </Button>
+
         {/* 根据是否设置同步仓库显示不同按钮 */}
         {syncRepo ? (
           <Button onClick={handlePushToRepo} loading={syncing} title="将 Stars 数据推送到选定的仓库">
@@ -258,6 +271,12 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLabelManager }) => {
       <SyncSettings
         visible={showSyncSettings}
         onClose={() => setShowSyncSettings(false)}
+      />
+
+      {/* 自动标签弹窗 */}
+      <AutoTagger
+        visible={showAutoTagger}
+        onClose={() => setShowAutoTagger(false)}
       />
 
       {/* 推送确认弹窗 */}

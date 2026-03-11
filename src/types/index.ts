@@ -24,6 +24,7 @@ export interface Label {
   id: string;             // 标签唯一标识
   name: string;           // 标签名称
   color: string;          // 标签颜色 (十六进制)
+  type: 'custom' | 'generated';  // 标签类型：custom=个人自定义，generated=AI生成
 }
 
 export interface RepoInfo {

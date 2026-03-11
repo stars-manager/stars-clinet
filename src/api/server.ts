@@ -1,0 +1,93 @@
+// 后端服务 API 调用
+// 开发环境通过 Vite 代理访问，生产环境使用相对路径
+
+// 项目信息（用于标签生成）
+export interface ProjectInfoForTags {
+  name: string;
+  full_name?: string;
+  description?: string;
+  language?: string;
+  url?: string;
+  stars?: number;
+  forks?: number;
+  topics?: string[];
+}
+
+// 标签生成请求
+export interface StarsTagsRequest {
+  projects: ProjectInfoForTags[];
+}
+
+// 标签生成响应
+export interface StarsTagsResponse {
+  summary: string;
+  tags: string[];
+  tag_count: number;
+  project_count: number;
+  process_time: string;
+}
+
+// 对话请求
+export interface ChatRequest {
+  message: string;
+  session_id: string;
+  documents?: string[];
+}
+
+// 对话响应
+export interface ChatResponse {
+  reply: string;
+  session_id: string;
+  is_new_session: boolean;
+  has_documents: boolean;
+  message_count: number;
+  process_time: string;
+}
+
+// 为项目生成标签
+export async function generateStarsTags(request: StarsTagsRequest): Promise<StarsTagsResponse> {
+  const response = await fetch('/api/v1/stars/tags', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: '请求失败' }));
+    throw new Error(error.message || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+// 智能对话
+export async function chat(request: ChatRequest): Promise<ChatResponse> {
+  const response = await fetch('/api/v1/chat/message', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: '请求失败' }));
+    throw new Error(error.message || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+// 清除会话
+export async function clearChatSession(sessionId: string): Promise<void> {
+  const response = await fetch(`/api/v1/chat/session/${sessionId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: '请求失败' }));
+    throw new Error(error.message || `HTTP ${response.status}`);
+  }
+}

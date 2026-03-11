@@ -1,15 +1,20 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import Input from "tdesign-react/es/input";
 import Select from "tdesign-react/es/select";
 import Space from "tdesign-react/es/space";
 import Loading from "tdesign-react/es/loading";
+import Button from "tdesign-react/es/button";
+import { MessagePlugin } from "tdesign-react/es/message";
 import "tdesign-react/es/input/style/css.js";
 import "tdesign-react/es/select/style/css.js";
 import "tdesign-react/es/space/style/css.js";
 import "tdesign-react/es/loading/style/css.js";
+import "tdesign-react/es/button/style/css.js";
+import "tdesign-react/es/message/style/css.js";
 import { useAppStore } from "../stores/app";
 import { StarCard } from "./StarCard";
 import { LabelSelect, NO_LABEL_ID } from "./LabelSelect";
+import { chat, ChatResponse } from "../api/server";
 
 type SortBy = "updated" | "name" | "stars";
 
@@ -19,9 +24,107 @@ export const StarList: React.FC = () => {
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState<string>("");
   const [sortBy, setSortBy] = useState<SortBy>("updated");
+  
+  // 智能匹配相关状态
+  const [smartQuery, setSmartQuery] = useState("");
+  const [isSmartMatching, setIsSmartMatching] = useState(false);
+  const [smartMatchedRepos, setSmartMatchedRepos] = useState<string[]>([]);
+  const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+
+  // 清除智能匹配结果
+  const clearSmartMatch = useCallback(() => {
+    setSmartMatchedRepos([]);
+    setSmartQuery("");
+  }, []);
+
+  // 智能匹配处理
+  const handleSmartMatch = useCallback(async () => {
+    if (!smartQuery.trim()) {
+      MessagePlugin.warning("请输入查询内容");
+      return;
+    }
+
+    if (stars.length === 0) {
+      MessagePlugin.warning("暂无项目数据");
+      return;
+    }
+
+    setIsSmartMatching(true);
+    
+    try {
+      // 构建项目列表文档
+      const projectDocs = stars.slice(0, 100).map(repo => {
+        const repoLabels = repos[repo.full_name]?.labels || [];
+        const labelNames = repoLabels
+          .map(id => labels.find(l => l.id === id)?.name)
+          .filter(Boolean)
+          .join(", ");
+        
+        return [
+          `项目：${repo.full_name}`,
+          repo.description ? `描述：${repo.description}` : null,
+          repo.language ? `语言：${repo.language}` : null,
+          labelNames ? `标签：${labelNames}` : null,
+        ].filter(Boolean).join(" | ");
+      });
+
+      const query = `请从以下项目中找出与"${smartQuery}"最相关的项目。返回项目名称列表（owner/repo格式），每行一个，最多返回20个。如果找不到相关项目，返回"无"。
+
+项目列表：
+${projectDocs.join("\n")}`;
+
+      const response: ChatResponse = await chat({
+        message: query,
+        session_id: sessionId,
+      });
+
+      // 解析响应，提取项目名称
+      const lines = response.reply.split("\n").map((line: string) => line.trim()).filter(Boolean);
+      const matchedNames: string[] = [];
+      
+      for (const line of lines) {
+        // 尝试匹配 owner/repo 格式
+        const match = line.match(/([a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+)/);
+        if (match && stars.some(s => s.full_name === match[1])) {
+          matchedNames.push(match[1]);
+        }
+      }
+
+      if (matchedNames.length === 0) {
+        // 如果没有匹配到，可能返回的是项目名称
+        for (const line of lines) {
+          const found = stars.find(s => 
+            s.full_name.toLowerCase().includes(line.toLowerCase()) ||
+            s.name.toLowerCase() === line.toLowerCase()
+          );
+          if (found && !matchedNames.includes(found.full_name)) {
+            matchedNames.push(found.full_name);
+          }
+        }
+      }
+
+      if (matchedNames.length === 0) {
+        MessagePlugin.info("未找到匹配的项目");
+        setSmartMatchedRepos([]);
+      } else {
+        setSmartMatchedRepos(matchedNames);
+        MessagePlugin.success(`找到 ${matchedNames.length} 个相关项目`);
+      }
+    } catch (error) {
+      console.error("Smart match error:", error);
+      MessagePlugin.error("智能匹配失败，请确保后端服务正在运行（http://localhost:8080）");
+    } finally {
+      setIsSmartMatching(false);
+    }
+  }, [smartQuery, stars, repos, labels, sessionId]);
 
   const filteredStars = useMemo(() => {
     let result = [...stars];
+
+    // 智能匹配结果优先
+    if (smartMatchedRepos.length > 0) {
+      result = result.filter(repo => smartMatchedRepos.includes(repo.full_name));
+    }
 
     // 标签筛选
     if (selectedLabels.length > 0) {
@@ -82,7 +185,7 @@ export const StarList: React.FC = () => {
     });
 
     return result;
-  }, [stars, search, selectedLabels, selectedLanguage, sortBy, repos]);
+  }, [stars, search, selectedLabels, selectedLanguage, sortBy, repos, smartMatchedRepos]);
 
   // 提取所有语言并生成选项
   const languageOptions = useMemo(() => {
@@ -100,6 +203,46 @@ export const StarList: React.FC = () => {
   return (
     <div>
       <div style={{ marginBottom: "16px" }}>
+        {/* 智能匹配行 */}
+        <div
+          style={{
+            marginBottom: "12px",
+            padding: "12px",
+            background: "#f5f5f5",
+            borderRadius: "8px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "14px", color: "#666", minWidth: "80px" }}>
+              智能匹配：
+            </span>
+            <Input
+              placeholder="输入需求，如：找一个 React 状态管理库"
+              value={smartQuery}
+              onChange={(value) => setSmartQuery(value)}
+              style={{ flex: 1 }}
+              onEnter={handleSmartMatch}
+            />
+            <Button
+              theme="primary"
+              onClick={handleSmartMatch}
+              loading={isSmartMatching}
+            >
+              匹配
+            </Button>
+            {smartMatchedRepos.length > 0 && (
+              <Button variant="outline" onClick={clearSmartMatch}>
+                清除结果
+              </Button>
+            )}
+          </div>
+          {smartMatchedRepos.length > 0 && (
+            <div style={{ marginTop: "8px", fontSize: "12px", color: "#2BA47D" }}>
+              已筛选出 {smartMatchedRepos.length} 个相关项目
+            </div>
+          )}
+        </div>
+
         {/* 第一行：筛选和排序 */}
         <div
           style={{

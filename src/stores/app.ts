@@ -6,6 +6,16 @@ import { generateId } from '../utils/storage';
 import { generateReadme, generateJson } from '../utils/markdown';
 import { mergeStarsData, parseSyncData, MergeStats } from '../utils/dataMerge';
 
+// 待确认的标签变更
+export interface PendingTagChange {
+  repoFullName: string;
+  repoName: string;
+  description: string | null;
+  language: string | null;
+  suggestedTags: string[];
+  currentLabelIds: string[];
+}
+
 interface AppState {
   // State
   token: string;
@@ -23,7 +33,7 @@ interface AppState {
   // Actions
   setToken: (token: string) => Promise<void>;
   fetchStars: () => Promise<MergeStats | void>;
-  addLabel: (name: string, color: string) => void;
+  addLabel: (name: string, color: string, type?: 'custom' | 'generated') => void;
   updateLabel: (id: string, name: string, color: string) => void;
   deleteLabel: (id: string) => void;
   setRepoLabels: (repoFullName: string, labelIds: string[]) => void;
@@ -35,6 +45,7 @@ interface AppState {
   setActiveTab: (tab: 'stars' | 'labels') => void;
   syncToRepo: () => Promise<void>;
   logout: () => void;
+  findOrCreateLabelByName: (name: string, type: 'custom' | 'generated') => string;
 }
 
 const stateCreator: StateCreator<AppState> = (set, get) => ({
@@ -115,8 +126,8 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
     }
   },
 
-  addLabel: (name: string, color: string) => {
-    const newLabel: Label = { id: generateId(), name, color };
+  addLabel: (name: string, color: string, type: 'custom' | 'generated' = 'custom') => {
+    const newLabel: Label = { id: generateId(), name, color, type };
     set((state) => ({
       labels: [...state.labels, newLabel],
     }));
@@ -251,6 +262,25 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
   logout: () => {
     set({ token: '', username: '', user: null, stars: [] });
   },
+
+  // 查找或创建标签（根据名称）
+  findOrCreateLabelByName: (name: string, type: 'custom' | 'generated'): string => {
+    const { labels, addLabel } = get();
+    const existingLabel = labels.find(l => l.name === name);
+    if (existingLabel) {
+      return existingLabel.id;
+    }
+    // 创建新标签
+    const colors = [
+      '#0052D9', '#2BA47D', '#E37318', '#E34D59', '#ED7B2F',
+      '#8E4EC6', '#0594FA', '#29B4BA', '#C45F9E', '#6E5FAD'
+    ];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    addLabel(name, color, type);
+    // 返回新创建的标签 ID（获取最新的）
+    const newLabels = get().labels;
+    return newLabels[newLabels.length - 1].id;
+  },
 });
 
 // 使用类型断言解决 zustand persist 与 TypeScript strict mode 的兼容性问题
@@ -261,7 +291,10 @@ const persistedCreator = persist(stateCreator, {
     token: state.token,
     username: state.username,
     user: state.user,
-    labels: state.labels,
+    labels: state.labels.map(l => ({
+      ...l,
+      type: l.type || 'custom', // 兼容旧数据
+    })),
     repos: state.repos,
     stars: state.stars,
     syncRepo: state.syncRepo,
