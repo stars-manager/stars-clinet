@@ -26,12 +26,15 @@ export const generateReadme = (
   const uncategorized: GitHubRepo[] = [];
 
   stars.forEach(star => {
-    const repoLabelsArr = repos[star.full_name]?.labels || [];
+    const repoInfo = repos[star.full_name];
+    const customLabels = repoInfo?.customLabels || [];
+    const generatedLabels = repoInfo?.generatedLabels || [];
+    const allLabels = [...customLabels, ...generatedLabels];
 
-    if (repoLabelsArr.length === 0) {
+    if (allLabels.length === 0) {
       uncategorized.push(star);
     } else {
-      repoLabelsArr.forEach(labelId => {
+      allLabels.forEach((labelId: string) => {
         const existing = labelMap.get(labelId) || [];
         existing.push(star);
         labelMap.set(labelId, existing);

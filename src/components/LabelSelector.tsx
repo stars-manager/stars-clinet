@@ -1,18 +1,5 @@
 import React, { useState } from 'react';
-import Button from 'tdesign-react/es/button';
-import Tag from 'tdesign-react/es/tag';
-import Input from 'tdesign-react/es/input';
-import Textarea from 'tdesign-react/es/textarea';
-import Dialog from 'tdesign-react/es/dialog';
-import Space from 'tdesign-react/es/space';
-import { MessagePlugin } from 'tdesign-react/es/message';
-import 'tdesign-react/es/button/style/css.js';
-import 'tdesign-react/es/tag/style/css.js';
-import 'tdesign-react/es/input/style/css.js';
-import 'tdesign-react/es/textarea/style/css.js';
-import 'tdesign-react/es/dialog/style/css.js';
-import 'tdesign-react/es/space/style/css.js';
-import 'tdesign-react/es/message/style/css.js';
+import { Button, Tag, Input, Textarea, Dialog, Space, MessagePlugin } from 'tdesign-react';
 import { useAppStore } from '../stores/app';
 import { LabelSelect } from './LabelSelect';
 
@@ -36,7 +23,7 @@ export const LabelSelector: React.FC<LabelSelectorProps> = ({ repoFullName, onCl
   const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
 
   const handleConfirm = () => {
-    setRepoLabels(repoFullName, selectedIds);
+    setRepoLabels(repoFullName, selectedIds, 'custom');
     setRepoRemark(repoFullName, remark);
     onClose();
   };
@@ -46,7 +33,7 @@ export const LabelSelector: React.FC<LabelSelectorProps> = ({ repoFullName, onCl
       MessagePlugin.warning('请输入标签名称');
       return;
     }
-    addLabel(newName.trim(), newColor);
+    addLabel(newName.trim(), newColor, 'custom');
     setNewName('');
     setNewColor(PRESET_COLORS[0]);
     setShowCreateDialog(false);

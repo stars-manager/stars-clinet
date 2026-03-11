@@ -39,7 +39,7 @@ export const generateJson = (
 export const generateReadme = (
   stars: GitHubRepo[],
   labels: Label[],
-  repos: { [repoFullName: string]: { labels: string[]; remark?: string } }
+  repos: Repos
 ): string => {
   const lines: string[] = [];
   
@@ -54,11 +54,15 @@ export const generateReadme = (
   const unlabeledRepos: GitHubRepo[] = [];
   
   stars.forEach(star => {
-    const repoLabelIds = repos[star.full_name]?.labels || [];
+    const repoInfo = repos[star.full_name];
+    const customLabels = repoInfo?.customLabels || [];
+    const generatedLabels = repoInfo?.generatedLabels || [];
+    const repoLabelIds = [...customLabels, ...generatedLabels];
+
     if (repoLabelIds.length === 0) {
       unlabeledRepos.push(star);
     } else {
-      repoLabelIds.forEach(labelId => {
+      repoLabelIds.forEach((labelId: string) => {
         if (!labelGroups[labelId]) {
           labelGroups[labelId] = [];
         }
@@ -123,7 +127,10 @@ export const generateReadme = (
   
   sortedStars.forEach((repo: GitHubRepo) => {
     const starCount = formatStarCount(repo.stargazers_count);
-    const labelIds = repos[repo.full_name]?.labels || [];
+    const repoInfo = repos[repo.full_name];
+    const customLabels = repoInfo?.customLabels || [];
+    const generatedLabels = repoInfo?.generatedLabels || [];
+    const labelIds = [...customLabels, ...generatedLabels];
     const labelNames = labelIds
       .map(id => labels.find(l => l.id === id)?.name)
       .filter(Boolean)

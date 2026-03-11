@@ -1,14 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import Radio from 'tdesign-react/es/radio';
-import Select from 'tdesign-react/es/select';
-import Input from 'tdesign-react/es/input';
-import Button from 'tdesign-react/es/button';
-import { MessagePlugin } from 'tdesign-react/es/message';
-import 'tdesign-react/es/radio/style/css.js';
-import 'tdesign-react/es/select/style/css.js';
-import 'tdesign-react/es/input/style/css.js';
-import 'tdesign-react/es/button/style/css.js';
-import 'tdesign-react/es/message/style/css.js';
+import { Radio, Select, Input, Button, MessagePlugin } from 'tdesign-react';
 import { useAppStore } from '../stores/app';
 import { getUserRepos, createRepo, RepoInfo } from '../api/github';
 

@@ -36,8 +36,10 @@ interface AppState {
   addLabel: (name: string, color: string, type?: 'custom' | 'generated') => void;
   updateLabel: (id: string, name: string, color: string) => void;
   deleteLabel: (id: string) => void;
-  setRepoLabels: (repoFullName: string, labelIds: string[]) => void;
+  setRepoLabels: (repoFullName: string, labelIds: string[], labelType?: 'custom' | 'generated') => void;
   getRepoLabels: (repoFullName: string) => string[];
+  getRepoCustomLabels: (repoFullName: string) => string[];
+  getRepoGeneratedLabels: (repoFullName: string) => string[];
   setRepoRemark: (repoFullName: string, remark: string) => void;
   getRepoRemark: (repoFullName: string) => string;
   setSyncRepo: (repo: string) => void;
@@ -147,7 +149,8 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
       Object.entries(state.repos).forEach(([repoFullName, repoInfo]) => {
         newRepos[repoFullName] = {
           ...repoInfo,
-          labels: repoInfo.labels.filter((labelId) => labelId !== id),
+          customLabels: repoInfo.customLabels.filter((labelId) => labelId !== id),
+          generatedLabels: repoInfo.generatedLabels.filter((labelId) => labelId !== id),
         };
       });
       return {
@@ -157,20 +160,41 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
     });
   },
 
-  setRepoLabels: (repoFullName: string, labelIds: string[]) => {
-    set((state) => ({
-      repos: {
-        ...state.repos,
-        [repoFullName]: {
-          ...state.repos[repoFullName],
-          labels: labelIds,
+  setRepoLabels: (repoFullName: string, labelIds: string[], labelType: 'custom' | 'generated' = 'custom') => {
+    set((state) => {
+      const existingRepo = state.repos[repoFullName] || {
+        customLabels: [],
+        generatedLabels: [],
+        description: null,
+        language: null,
+      };
+
+      return {
+        repos: {
+          ...state.repos,
+          [repoFullName]: {
+            ...existingRepo,
+            customLabels: labelType === 'custom' ? labelIds : existingRepo.customLabels,
+            generatedLabels: labelType === 'generated' ? labelIds : existingRepo.generatedLabels,
+          },
         },
-      },
-    }));
+      };
+    });
   },
 
   getRepoLabels: (repoFullName: string) => {
-    return get().repos[repoFullName]?.labels || [];
+    const repoInfo = get().repos[repoFullName];
+    if (!repoInfo) return [];
+    // 返回合并后的标签ID数组（自定义标签在前，AI生成标签在后）
+    return [...(repoInfo.customLabels || []), ...(repoInfo.generatedLabels || [])];
+  },
+
+  getRepoCustomLabels: (repoFullName: string) => {
+    return get().repos[repoFullName]?.customLabels || [];
+  },
+
+  getRepoGeneratedLabels: (repoFullName: string) => {
+    return get().repos[repoFullName]?.generatedLabels || [];
   },
 
   setRepoRemark: (repoFullName: string, remark: string) => {
@@ -266,10 +290,13 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
   // 查找或创建标签（根据名称）
   findOrCreateLabelByName: (name: string, type: 'custom' | 'generated'): string => {
     const { labels, addLabel } = get();
+    
+    // 检查是否已存在同名标签
     const existingLabel = labels.find(l => l.name === name);
     if (existingLabel) {
       return existingLabel.id;
     }
+    
     // 创建新标签
     const colors = [
       '#0052D9', '#2BA47D', '#E37318', '#E34D59', '#ED7B2F',
@@ -277,9 +304,13 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
     ];
     const color = colors[Math.floor(Math.random() * colors.length)];
     addLabel(name, color, type);
+    
     // 返回新创建的标签 ID（获取最新的）
     const newLabels = get().labels;
-    return newLabels[newLabels.length - 1].id;
+    const newLabel = newLabels.find(l => l.name === name);
+    
+    // 如果找到了新标签,返回其 ID;否则返回最后一个标签的 ID
+    return newLabel?.id || newLabels[newLabels.length - 1]?.id || '';
   },
 });
 
@@ -299,6 +330,40 @@ const persistedCreator = persist(stateCreator, {
     stars: state.stars,
     syncRepo: state.syncRepo,
   }),
+  // 数据迁移：将旧版本的 labels 字段迁移到 customLabels 和 generatedLabels
+  migrate: (persistedState: any, _version: number) => {
+    // 如果 repos 中有任何 repo 使用旧的 labels 字段，进行迁移
+    if (persistedState.repos) {
+      const migratedRepos: any = {};
+
+      Object.entries(persistedState.repos).forEach(([repoFullName, repoInfo]: [string, any]) => {
+        // 检查是否使用旧的 labels 字段
+        if (repoInfo.labels && !repoInfo.customLabels) {
+          // 迁移：将所有旧标签视为自定义标签
+          migratedRepos[repoFullName] = {
+            ...repoInfo,
+            customLabels: repoInfo.labels || [],
+            generatedLabels: [],
+            labels: undefined, // 删除旧字段
+          };
+        } else {
+          // 已经是新格式，直接使用
+          migratedRepos[repoFullName] = {
+            customLabels: repoInfo.customLabels || [],
+            generatedLabels: repoInfo.generatedLabels || [],
+            description: repoInfo.description,
+            language: repoInfo.language,
+            remark: repoInfo.remark,
+          };
+        }
+      });
+
+      persistedState.repos = migratedRepos;
+    }
+
+    return persistedState;
+  },
+  version: 1, // 版本号，用于迁移
 });
 
 export const useAppStore = create<AppState>()(persistedCreator as StateCreator<AppState>);

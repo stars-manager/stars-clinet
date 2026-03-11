@@ -1,16 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import Layout from 'tdesign-react/es/layout';
-import Button from 'tdesign-react/es/button';
-import Space from 'tdesign-react/es/space';
-import { MessagePlugin } from 'tdesign-react/es/message';
-import 'tdesign-react/es/layout/style/css.js';
-import 'tdesign-react/es/button/style/css.js';
-import 'tdesign-react/es/space/style/css.js';
-import 'tdesign-react/es/message/style/css.js';
+import { Layout, Button, Space, MessagePlugin } from 'tdesign-react';
 import { useAppStore } from './stores/app';
 import { Header } from './components/Header';
 import { StarList } from './components/StarList';
 import { LabelManager } from './components/LabelManager';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const { Content } = Layout;
 
@@ -60,7 +54,9 @@ const MainContent: React.FC = () => {
       )}
 
       <Content style={{ padding: '24px', background: '#f5f5f5' }}>
-        <StarList />
+        <ErrorBoundary>
+          <StarList />
+        </ErrorBoundary>
       </Content>
 
       {/* 标签管理弹窗 */}

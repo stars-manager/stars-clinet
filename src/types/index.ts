@@ -28,10 +28,19 @@ export interface Label {
 }
 
 export interface RepoInfo {
-  labels: string[];           // 该仓库关联的标签 ID 数组
+  customLabels: string[];     // 自定义标签 ID 数组
+  generatedLabels: string[];  // AI 生成标签 ID 数组
   description: string | null; // 仓库简介（从 GitHub 同步）
   language: string | null;    // 仓库主要语言（从 GitHub 同步）
   remark?: string;            // 备注
+}
+
+// 兼容旧数据的迁移辅助类型
+export interface LegacyRepoInfo {
+  labels?: string[];          // 旧版本的标签数组（已废弃）
+  description?: string | null;
+  language?: string | null;
+  remark?: string;
 }
 
 export interface Repos {

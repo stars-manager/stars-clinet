@@ -44,14 +44,14 @@ export const calculateIncrementalChanges = (
     const remoteRepo = remoteRepos[repoFullName];
 
     // 检查标签变化
-    const localLabels = localRepo?.labels || [];
-    const remoteLabels = remoteRepo?.labels || [];
+    const localLabels = [...(localRepo?.customLabels || []), ...(localRepo?.generatedLabels || [])];
+    const remoteLabels = [...(remoteRepo?.customLabels || []), ...(remoteRepo?.generatedLabels || [])];
 
-    if (localLabels.length !== remoteLabels.length || 
-        !localLabels.every(l => remoteLabels.includes(l))) {
+    if (localLabels.length !== remoteLabels.length ||
+        !localLabels.every((l: string) => remoteLabels.includes(l))) {
       // 标签有变化
-      const addedLabels = localLabels.filter(l => !remoteLabels.includes(l));
-      const removedLabels = remoteLabels.filter(l => !localLabels.includes(l));
+      const addedLabels = localLabels.filter((l: string) => !remoteLabels.includes(l));
+      const removedLabels = remoteLabels.filter((l: string) => !localLabels.includes(l));
 
       if (addedLabels.length > 0) {
         labelChanges.push({

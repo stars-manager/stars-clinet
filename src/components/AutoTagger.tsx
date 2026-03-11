@@ -1,33 +1,16 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import Button from 'tdesign-react/es/button';
-import Space from 'tdesign-react/es/space';
-import Dialog from 'tdesign-react/es/dialog';
-import Tag from 'tdesign-react/es/tag';
-import Loading from 'tdesign-react/es/loading';
-import Tree from 'tdesign-react/es/tree';
-import Input from 'tdesign-react/es/input';
-import { MessagePlugin } from 'tdesign-react/es/message';
-import 'tdesign-react/es/button/style/css.js';
-import 'tdesign-react/es/space/style/css.js';
-import 'tdesign-react/es/dialog/style/css.js';
-import 'tdesign-react/es/tag/style/css.js';
-import 'tdesign-react/es/loading/style/css.js';
-import 'tdesign-react/es/message/style/css.js';
-import 'tdesign-react/es/tree/style/css.js';
-import 'tdesign-react/es/input/style/css.js';
+import { Button, Space, Dialog, Tag, Loading, Tree, Input, MessagePlugin } from 'tdesign-react';
 import { useAppStore, PendingTagChange } from '../stores/app';
 import { generateStarsTags, ProjectInfoForTags } from '../api/server';
+import { buildTreeData, calculateTreeChecked, parseTreeValue, BATCH_SIZE } from '../utils/autoTaggerUtils';
 
 interface AutoTaggerProps {
   visible: boolean;
   onClose: () => void;
 }
 
-// 每批次处理的项目数（后端限制 20 个）
-const BATCH_SIZE = 20;
-
 export const AutoTagger: React.FC<AutoTaggerProps> = ({ visible, onClose }) => {
-  const { stars, repos, labels, findOrCreateLabelByName, setRepoLabels } = useAppStore();
+  const { stars, repos, labels, findOrCreateLabelByName, setRepoLabels, getRepoLabels } = useAppStore();
 
   // 状态
   const [step, setStep] = useState<'config' | 'generating' | 'confirm'>('config');
@@ -39,16 +22,6 @@ export const AutoTagger: React.FC<AutoTaggerProps> = ({ visible, onClose }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
 
-  // 获取标签类型映射
-  const labelTypeMap = useMemo(() => {
-    const map = new Map<string, 'custom' | 'generated'>();
-    const labelsList = labels || [];
-    labelsList.forEach(label => {
-      map.set(label.id, label.type || 'custom');
-    });
-    return map;
-  }, [labels]);
-
   // 统计项目标签情况（同时考虑自定义标签和 AI 生成标签）
   const repoTagStats = useMemo(() => {
     let withCustomTags = 0;
@@ -56,12 +29,16 @@ export const AutoTagger: React.FC<AutoTaggerProps> = ({ visible, onClose }) => {
     let withoutTags = 0;
 
     (stars || []).forEach(repo => {
-      const repoLabels = (repos || {})[repo.full_name]?.labels || [];
-      if (repoLabels.length === 0) {
+      const repoInfo = (repos || {})[repo.full_name];
+      const customLabels = repoInfo?.customLabels || [];
+      const generatedLabels = repoInfo?.generatedLabels || [];
+      const hasLabels = customLabels.length > 0 || generatedLabels.length > 0;
+
+      if (!hasLabels) {
         withoutTags++;
       } else {
-        const hasCustom = repoLabels.some(labelId => (labelTypeMap || new Map()).get(labelId) === 'custom');
-        const hasGenerated = repoLabels.some(labelId => (labelTypeMap || new Map()).get(labelId) === 'generated');
+        const hasCustom = customLabels.length > 0;
+        const hasGenerated = generatedLabels.length > 0;
 
         if (hasCustom) withCustomTags++;
         if (hasGenerated) withGeneratedTags++;
@@ -73,8 +50,10 @@ export const AutoTagger: React.FC<AutoTaggerProps> = ({ visible, onClose }) => {
 
   // 获取未设置标签的项目（没有任何标签）
   const untaggedRepos = (stars || []).filter(repo => {
-    const repoLabels = repos[repo.full_name]?.labels || [];
-    return repoLabels.length === 0;
+    const repoInfo = repos[repo.full_name];
+    const customLabels = repoInfo?.customLabels || [];
+    const generatedLabels = repoInfo?.generatedLabels || [];
+    return customLabels.length === 0 && generatedLabels.length === 0;
   });
 
   // 过滤后的未设置标签项目
@@ -89,96 +68,26 @@ export const AutoTagger: React.FC<AutoTaggerProps> = ({ visible, onClose }) => {
     );
   }, [untaggedRepos, searchKeyword]);
 
-  // 构建未设置标签项目的树形数据
+  // 构建未设置标签项目的树形数据（使用工具函数）
   const untaggedTreeData = useMemo(() => {
     const repos = filteredUntaggedRepos || [];
-    const totalBatches = Math.ceil(repos.length / BATCH_SIZE);
-    const batches: any[] = [];
-
-    for (let i = 0; i < totalBatches; i++) {
-      const start = i * BATCH_SIZE + 1;
-      const end = Math.min((i + 1) * BATCH_SIZE, repos.length);
-      const batchRepos = repos.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE);
-
-      batches.push({
-        value: `batch-${i}`,
-        label: `第 ${i + 1} 组 (${start}-${end})`,
-        children: batchRepos.map(repo => ({
-          value: repo.full_name,
-          label: repo.language ? `${repo.full_name} (${repo.language})` : repo.full_name,
-          repo,
-        })),
-      });
-    }
-
-    return [{
-      value: 'all',
-      label: `全部项目 (${repos.length})`,
-      children: batches,
-    }];
+    return buildTreeData(repos, (repo: any) => ({
+      value: repo.full_name,
+      label: repo.language ? `${repo.full_name} (${repo.language})` : repo.full_name,
+      repo,
+    }));
   }, [filteredUntaggedRepos]);
 
-  // 获取 Tree 的 checked 值
+  // 获取 Tree 的 checked 值（使用工具函数）
   const untaggedTreeChecked = useMemo(() => {
-    const selectedSet = new Set(selectedRepos);
-    const repos = filteredUntaggedRepos || [];
-
-    // 检查是否全选
-    const allSelected = repos.length > 0 && repos.every(r => selectedSet.has(r.full_name));
-    if (allSelected) {
-      return ['all'];
-    }
-
-    const checked: string[] = [];
-    const totalBatches = Math.ceil(repos.length / BATCH_SIZE);
-
-    for (let i = 0; i < totalBatches; i++) {
-      const start = i * BATCH_SIZE;
-      const end = Math.min(start + BATCH_SIZE, repos.length);
-      const batchRepos = repos.slice(start, end);
-      const allBatchSelected = batchRepos.every(r => selectedSet.has(r.full_name));
-
-      if (allBatchSelected && batchRepos.length > 0) {
-        checked.push(`batch-${i}`);
-      } else {
-        batchRepos.forEach(r => {
-          if (selectedSet.has(r.full_name)) {
-            checked.push(r.full_name);
-          }
-        });
-      }
-    }
-
-    return checked;
+    return calculateTreeChecked(selectedRepos, filteredUntaggedRepos || [], (repo: any) => repo.full_name);
   }, [selectedRepos, filteredUntaggedRepos]);
 
-  // 处理 Tree 的选中变化
-  const handleUntaggedCheck = useCallback((value: any, context: any) => {
-    const filteredRepos = filteredUntaggedRepos || [];
-
-    // 如果选中的包含 'all'，展开为所有叶子节点
-    if (value && value.includes && value.includes('all')) {
-      setSelectedRepos(filteredRepos.map(r => r.full_name));
-      return;
-    }
-
-    const selected = new Set<string>();
-    (value || []).forEach((item: string) => {
-      if (item.startsWith('batch-')) {
-        // 分组节点：展开为该组的所有项目
-        const batchIndex = parseInt(item.replace('batch-', ''), 10);
-        const start = batchIndex * BATCH_SIZE;
-        const end = Math.min(start + BATCH_SIZE, filteredRepos.length);
-        for (let i = start; i < end; i++) {
-          selected.add(filteredRepos[i].full_name);
-        }
-      } else {
-        // 叶子节点（项目 full_name）
-        selected.add(item);
-      }
-    });
-
-    setSelectedRepos(Array.from(selected));
+  // 处理 Tree 的选中变化（使用工具函数）
+  const handleUntaggedCheck = useCallback((value: any, _context: any) => {
+    const repos = filteredUntaggedRepos || [];
+    const parsed = parseTreeValue(value || [], repos, (repo: any) => repo.full_name);
+    setSelectedRepos(parsed);
   }, [filteredUntaggedRepos]);
 
   // 获取实际选中的项目数量（基于原始数据）
@@ -188,14 +97,36 @@ export const AutoTagger: React.FC<AutoTaggerProps> = ({ visible, onClose }) => {
   const isAllFilteredSelected = (filteredUntaggedRepos || []).length > 0 &&
     (filteredUntaggedRepos || []).every(r => selectedRepos.includes(r.full_name));
 
+  // 判断"未设置标签"按钮是否应该高亮
+  // 如果有搜索关键字,判断当前搜索结果是否全部选中;否则判断所有未设置标签的项目是否全部选中
+  const isAllUntaggedSelected = searchKeyword && searchKeyword.trim()
+    ? isAllFilteredSelected  // 有搜索关键字时,基于当前搜索结果
+    : untaggedRepos.length > 0 && untaggedRepos.every(r => selectedRepos.includes(r.full_name));  // 无搜索关键字时,基于所有未设置标签的项目
+
   // 批量选择操作（配置步骤）
   const handleBatchSelect = useCallback((type: 'untagged') => {
     if (type === 'untagged') {
-      // 选择所有未设置标签的项目（基于当前过滤结果）
-      const currentFilteredSet = new Set((filteredUntaggedRepos || []).map(r => r.full_name));
-      setSelectedRepos(Array.from(currentFilteredSet));
+      // 如果有搜索关键字,操作当前搜索结果;否则操作所有未设置标签的项目
+      const targetRepos = searchKeyword && searchKeyword.trim() ? filteredUntaggedRepos : untaggedRepos;
+      const targetSet = new Set(targetRepos.map(r => r.full_name));
+
+      // 判断目标项目是否全部选中
+      const allTargetSelected = targetRepos.length > 0 &&
+        targetRepos.every(r => selectedRepos.includes(r.full_name));
+
+      if (allTargetSelected) {
+        // 已经全选,取消选中目标项目
+        setSelectedRepos(prev => prev.filter(id => !targetSet.has(id)));
+      } else {
+        // 未全选,选中目标项目(保留其他已选中的项目)
+        setSelectedRepos(prev => {
+          const newSet = new Set(prev);
+          targetSet.forEach(id => newSet.add(id));
+          return Array.from(newSet);
+        });
+      }
     }
-  }, [filteredUntaggedRepos]);
+  }, [searchKeyword, filteredUntaggedRepos, untaggedRepos, selectedRepos]);
 
   // 全选/取消全选（基于当前过滤结果）
   const handleSelectAll = useCallback(() => {
@@ -250,14 +181,24 @@ export const AutoTagger: React.FC<AutoTaggerProps> = ({ visible, onClose }) => {
         try {
           const response = await generateStarsTags({ projects });
 
+          // 构建项目名称到标签的映射
+          const projectTagsMap = new Map<string, string[]>();
+          if (response.data?.projects && Array.isArray(response.data.projects)) {
+            response.data.projects.forEach(p => {
+              projectTagsMap.set(p.name, Array.isArray(p.tags) ? p.tags : ['未分类']);
+            });
+          }
+
           batch.forEach(repo => {
+            const tags = projectTagsMap.get(repo.name) || ['未分类'];
+            const currentLabels = getRepoLabels(repo.full_name);
             changes.push({
               repoFullName: repo.full_name,
               repoName: repo.name,
               description: repo.description,
               language: repo.language,
-              suggestedTags: response.tags,
-              currentLabelIds: repos[repo.full_name]?.labels || [],
+              suggestedTags: tags,
+              currentLabelIds: currentLabels,
             });
           });
         } catch (error) {
@@ -266,13 +207,14 @@ export const AutoTagger: React.FC<AutoTaggerProps> = ({ visible, onClose }) => {
             MessagePlugin.error('无法连接到后端服务，请确保后端服务正在运行（http://localhost:8080）');
           }
           batch.forEach(repo => {
+            const currentLabels = getRepoLabels(repo.full_name);
             changes.push({
               repoFullName: repo.full_name,
               repoName: repo.name,
               description: repo.description,
               language: repo.language,
               suggestedTags: ['未分类'],
-              currentLabelIds: repos[repo.full_name]?.labels || [],
+              currentLabelIds: currentLabels,
             });
           });
         }
@@ -287,7 +229,7 @@ export const AutoTagger: React.FC<AutoTaggerProps> = ({ visible, onClose }) => {
       setPendingChanges(changes);
       setSelectedChanges(changes.map(c => c.repoFullName));
       setStep('confirm');
-    } catch (error) {
+    } catch (_error) {
       MessagePlugin.error('标签生成失败');
       setStep('config');
     } finally {
@@ -310,109 +252,30 @@ export const AutoTagger: React.FC<AutoTaggerProps> = ({ visible, onClose }) => {
       for (const change of pendingChanges) {
         if (!selectedChanges.includes(change.repoFullName)) continue;
 
-        // 为每个建议的标签创建或查找标签
-        const labelIds = change.suggestedTags.map(tagName =>
-          findOrCreateLabelByName(tagName, 'generated')
-        );
+        // 确保 suggestedTags 存在且是数组
+        const tags = Array.isArray(change.suggestedTags) ? change.suggestedTags : [];
 
-        setRepoLabels(change.repoFullName, labelIds);
-        appliedCount++;
+        // 为每个建议的标签创建或查找标签
+        const labelIds = tags.map(tagName => {
+          const labelId = findOrCreateLabelByName(tagName, 'generated');
+          return labelId;
+        }).filter(id => id); // 过滤掉可能的 undefined
+
+        if (labelIds.length > 0) {
+          setRepoLabels(change.repoFullName, labelIds, 'generated');
+          appliedCount++;
+        }
       }
 
       MessagePlugin.success(`已为 ${appliedCount} 个项目应用标签`);
       onClose();
       resetState();
-    } catch (error) {
+    } catch (_error) {
       MessagePlugin.error('应用标签失败');
     } finally {
       setIsApplying(false);
     }
   }, [pendingChanges, selectedChanges, findOrCreateLabelByName, setRepoLabels, onClose]);
-
-  // 确认步骤：构建已生成标签项目的树形数据
-  const confirmTreeData = useMemo(() => {
-    const totalBatches = Math.ceil(pendingChanges.length / BATCH_SIZE);
-    const batches: { value: string; label: string; children: any[] }[] = [];
-
-    for (let i = 0; i < totalBatches; i++) {
-      const start = i * BATCH_SIZE + 1;
-      const end = Math.min((i + 1) * BATCH_SIZE, pendingChanges.length);
-      const batchRepos = pendingChanges.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE);
-
-      batches.push({
-        value: `batch-${i}`,
-        label: `第 ${i + 1} 组 (${start}-${end})`,
-        children: batchRepos.map(change => ({
-          value: change.repoFullName,
-          label: `${change.repoFullName} → ${change.suggestedTags.join(', ')}`,
-          change,
-        })),
-      });
-    }
-
-    return [{
-      value: 'all',
-      label: `全部项目 (${pendingChanges.length})`,
-      children: batches,
-    }];
-  }, [pendingChanges]);
-
-  // 确认步骤：Tree 选中变化处理
-  const handleConfirmCheck = useCallback((value: any) => {
-    const changes = pendingChanges || [];
-
-    if (value && value.includes('all')) {
-      setSelectedChanges(changes.map(c => c.repoFullName));
-      return;
-    }
-
-    const selected = new Set<string>();
-    (value || []).forEach((item: string) => {
-      if (item.startsWith('batch-')) {
-        const batchIndex = parseInt(item.replace('batch-', ''), 10);
-        const start = batchIndex * BATCH_SIZE;
-        const end = Math.min(start + BATCH_SIZE, changes.length);
-        for (let i = start; i < end; i++) {
-          selected.add(changes[i].repoFullName);
-        }
-      } else {
-        selected.add(item);
-      }
-    });
-
-    setSelectedChanges(Array.from(selected));
-  }, [pendingChanges]);
-
-  // 确认步骤：获取 Tree 的 checked 值
-  const confirmTreeChecked = useMemo(() => {
-    const changes = pendingChanges || [];
-    const selectedSet = new Set(selectedChanges || []);
-
-    if (selectedChanges.length === changes.length && changes.length > 0) {
-      return ['all'];
-    }
-
-    const checked: string[] = [];
-    const totalBatches = Math.ceil(changes.length / BATCH_SIZE);
-    for (let i = 0; i < totalBatches; i++) {
-      const start = i * BATCH_SIZE;
-      const end = Math.min(start + BATCH_SIZE, changes.length);
-      const batchRepos = changes.slice(start, end);
-      const allSelected = batchRepos.every(c => selectedSet.has(c.repoFullName));
-
-      if (allSelected && batchRepos.length > 0) {
-        checked.push(`batch-${i}`);
-      } else {
-        batchRepos.forEach(c => {
-          if (selectedSet.has(c.repoFullName)) {
-            checked.push(c.repoFullName);
-          }
-        });
-      }
-    }
-
-    return checked;
-  }, [selectedChanges, pendingChanges]);
 
   // 重置状态
   const resetState = useCallback(() => {
@@ -496,7 +359,12 @@ export const AutoTagger: React.FC<AutoTaggerProps> = ({ visible, onClose }) => {
                       选择要生成标签的项目
                     </span>
                     <Space>
-                      <Button size="small" variant="outline" onClick={() => handleBatchSelect('untagged')}>
+                      <Button
+                        size="small"
+                        theme={isAllUntaggedSelected ? 'primary' : 'default'}
+                        variant={isAllUntaggedSelected ? 'base' : 'outline'}
+                        onClick={() => handleBatchSelect('untagged')}
+                      >
                         未设置标签
                       </Button>
                       <Button
@@ -620,61 +488,73 @@ export const AutoTagger: React.FC<AutoTaggerProps> = ({ visible, onClose }) => {
             </div>
           </div>
 
-          {/* Tree 选择器 - 显示项目及建议标签 */}
+          {/* 项目列表 - 可选择 */}
           <div style={{
-            marginBottom: '16px',
+            maxHeight: '400px',
+            overflow: 'auto',
             border: '1px solid #e7e7e7',
             borderRadius: '4px',
-            maxHeight: '300px',
-            overflow: 'auto'
+            background: '#fff'
           }}>
-            <Tree
-              data={confirmTreeData}
-              checkable
-              expandAll
-              checked={confirmTreeChecked}
-              onCheck={handleConfirmCheck}
-            />
-          </div>
-
-          {/* 已选项目预览 - 显示标签建议 */}
-          {selectedChanges.length > 0 && (
-            <div style={{
-              maxHeight: '200px',
-              overflow: 'auto',
-              border: '1px solid #e7e7e7',
-              borderRadius: '4px',
-              padding: '12px',
-              background: '#fafafa'
-            }}>
-              <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
-                已选项目预览（显示建议标签，前10个）：
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {pendingChanges
-                  .filter(c => selectedChanges.includes(c.repoFullName))
-                  .slice(0, 10)
-                  .map(change => (
-                    <div key={change.repoFullName} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <Tag size="small" theme="primary" variant="outline">
-                        {change.repoFullName}
-                      </Tag>
-                      <span style={{ color: '#999', fontSize: '12px' }}>→</span>
-                      {change.suggestedTags.map((tag, idx) => (
-                        <Tag key={idx} size="small" theme="success" variant="light">
-                          {tag}
-                        </Tag>
-                      ))}
+            {pendingChanges.map(change => {
+              const isSelected = selectedChanges.includes(change.repoFullName);
+              return (
+                <div
+                  key={change.repoFullName}
+                  onClick={() => {
+                    if (isSelected) {
+                      setSelectedChanges(prev => prev.filter(id => id !== change.repoFullName));
+                    } else {
+                      setSelectedChanges(prev => [...prev, change.repoFullName]);
+                    }
+                  }}
+                  style={{
+                    padding: '12px',
+                    borderBottom: '1px solid #f0f0f0',
+                    cursor: 'pointer',
+                    background: isSelected ? '#e3f2fd' : '#fff',
+                    transition: 'background 0.2s'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <div style={{
+                      width: '16px',
+                      height: '16px',
+                      borderRadius: '3px',
+                      border: `2px solid ${isSelected ? '#0052D9' : '#d9d9d9'}`,
+                      background: isSelected ? '#0052D9' : '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      {isSelected && (
+                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                          <path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
                     </div>
-                  ))}
-                {selectedChanges.length > 10 && (
-                  <Tag size="small" theme="default">
-                    ...等 {selectedChanges.length} 个项目
-                  </Tag>
-                )}
-              </div>
-            </div>
-          )}
+                    <Tag size="small" theme="primary" variant="outline">
+                      {change.repoFullName}
+                    </Tag>
+                    {change.language && (
+                      <Tag size="small" theme="default" variant="light">
+                        {change.language}
+                      </Tag>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '24px', flexWrap: 'wrap' }}>
+                    <span style={{ color: '#999', fontSize: '12px' }}>→</span>
+                    {change.suggestedTags.map((tag, idx) => (
+                      <Tag key={idx} size="small" theme="success" variant="light">
+                        {tag}
+                      </Tag>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
 
           {/* 底部操作栏 */}
           <div style={{
@@ -684,10 +564,14 @@ export const AutoTagger: React.FC<AutoTaggerProps> = ({ visible, onClose }) => {
             marginTop: '16px'
           }}>
             <div style={{ fontSize: '12px', color: '#999' }}>
-              提示：可在上方调整要应用标签的项目
+              点击项目可切换选中状态
             </div>
             <Space>
-              <Button variant="outline" onClick={() => setStep('config')}>
+              <Button variant="outline" onClick={() => {
+                setStep('config');
+                setPendingChanges([]); // 清空已生成的标签
+                setSelectedChanges([]); // 清空选中的变更
+              }}>
                 重新选择
               </Button>
               <Button variant="outline" onClick={handleClose}>

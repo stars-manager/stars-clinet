@@ -1,18 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import Button from 'tdesign-react/es/button';
-import Space from 'tdesign-react/es/space';
-import Input from 'tdesign-react/es/input';
-import Dialog from 'tdesign-react/es/dialog';
-import Tag from 'tdesign-react/es/tag';
-import Tabs from 'tdesign-react/es/tabs';
-import { MessagePlugin } from 'tdesign-react/es/message';
-import 'tdesign-react/es/button/style/css.js';
-import 'tdesign-react/es/space/style/css.js';
-import 'tdesign-react/es/input/style/css.js';
-import 'tdesign-react/es/dialog/style/css.js';
-import 'tdesign-react/es/tag/style/css.js';
-import 'tdesign-react/es/tabs/style/css.js';
-import 'tdesign-react/es/message/style/css.js';
+import { Button, Space, Input, Dialog, Tag, Tabs, MessagePlugin } from 'tdesign-react';
 import { useAppStore } from '../stores/app';
 import { Label } from '../types';
 
@@ -41,6 +28,8 @@ export const LabelManager: React.FC<LabelManagerProps> = ({ onClose }) => {
   const [name, setName] = useState('');
   const [color, setColor] = useState(PRESET_COLORS[0]);
   const [activeTab, setActiveTab] = useState<'all' | 'custom' | 'generated'>('all');
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [labelToDelete, setLabelToDelete] = useState<Label | null>(null);
 
   // 按类型分组标签
   const groupedLabels = useMemo(() => {
@@ -62,7 +51,10 @@ export const LabelManager: React.FC<LabelManagerProps> = ({ onClose }) => {
   }, [activeTab, labels, groupedLabels]);
 
   const getLabelCount = (labelId: string): number => {
-    return Object.values(repos).filter(repo => repo.labels.includes(labelId)).length;
+    return Object.values(repos).filter(repo =>
+      (repo.customLabels || []).includes(labelId) ||
+      (repo.generatedLabels || []).includes(labelId)
+    ).length;
   };
 
   const handleAdd = () => {
@@ -98,13 +90,22 @@ export const LabelManager: React.FC<LabelManagerProps> = ({ onClose }) => {
   };
 
   const handleDelete = (label: Label) => {
-    const count = getLabelCount(label.id);
-    if (count > 0) {
-      const confirmed = window.confirm(`该标签下有 ${count} 个项目，删除后将从所有项目中移除。确定删除？`);
-      if (!confirmed) return;
+    setLabelToDelete(label);
+    setDeleteConfirmVisible(true);
+  };
+
+  const confirmDelete = () => {
+    if (labelToDelete) {
+      deleteLabel(labelToDelete.id);
+      MessagePlugin.success('标签删除成功');
+      setLabelToDelete(null);
+      setDeleteConfirmVisible(false);
     }
-    deleteLabel(label.id);
-    MessagePlugin.success('标签删除成功');
+  };
+
+  const cancelDelete = () => {
+    setLabelToDelete(null);
+    setDeleteConfirmVisible(false);
   };
 
   const resetForm = () => {
@@ -175,7 +176,9 @@ export const LabelManager: React.FC<LabelManagerProps> = ({ onClose }) => {
                 borderRadius: '4px',
               }}
             />
-            <span style={{ fontSize: '16px', fontWeight: 500 }}>{label.name}</span>
+            <span style={{ fontSize: '16px', fontWeight: 500 }}>
+              {label.type === 'generated' && '✨ '}{label.name}
+            </span>
             {label.type === 'generated' && (
               <Tag size="small" theme="primary" variant="light">
                 AI 生成
@@ -395,6 +398,44 @@ export const LabelManager: React.FC<LabelManagerProps> = ({ onClose }) => {
             >
               {name || '标签名称'}
             </Tag>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* 删除确认对话框 */}
+      <Dialog
+        header="删除标签"
+        visible={deleteConfirmVisible}
+        onClose={cancelDelete}
+        onConfirm={confirmDelete}
+        confirmBtn="确定删除"
+        cancelBtn="取消"
+        theme="danger"
+        width="480px"
+      >
+        <div style={{ padding: '12px 0' }}>
+          <div style={{ marginBottom: '16px', fontSize: '14px', lineHeight: 1.6 }}>
+            <p style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              确定要删除标签 
+              {labelToDelete && (
+                <Tag
+                  style={{
+                    backgroundColor: labelToDelete.color,
+                    color: '#fff',
+                    border: 'none',
+                  }}
+                >
+                  {labelToDelete.type === 'generated' && '✨ '}{labelToDelete.name}
+                </Tag>
+              )}
+              吗？
+            </p>
+            {labelToDelete && (
+              <p style={{ color: '#E34D59', fontSize: '13px', marginTop: '12px' }}>
+                ⚠️ 该标签下有 <strong>{getLabelCount(labelToDelete.id)}</strong> 个项目，
+                删除后将从所有项目中移除该标签，此操作不可恢复。
+              </p>
+            )}
           </div>
         </div>
       </Dialog>

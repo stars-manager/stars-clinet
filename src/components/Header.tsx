@@ -1,16 +1,5 @@
 import React, { useState } from 'react';
-import Button from 'tdesign-react/es/button';
-import Input from 'tdesign-react/es/input';
-import Space from 'tdesign-react/es/space';
-import Dialog from 'tdesign-react/es/dialog';
-import Tag from 'tdesign-react/es/tag';
-import { MessagePlugin } from 'tdesign-react/es/message';
-import 'tdesign-react/es/button/style/css.js';
-import 'tdesign-react/es/input/style/css.js';
-import 'tdesign-react/es/space/style/css.js';
-import 'tdesign-react/es/dialog/style/css.js';
-import 'tdesign-react/es/tag/style/css.js';
-import 'tdesign-react/es/message/style/css.js';
+import { Button, Input, Space, Dialog, Tag, MessagePlugin } from 'tdesign-react';
 import { useAppStore } from '../stores/app';
 import { SyncSettings } from './SyncSettings';
 import { AutoTagger } from './AutoTagger';

@@ -66,7 +66,8 @@ export const mergeStarsData = (
       // 新增的仓库
       stats.added++;
       newRepos[fullName] = {
-        labels: [],
+        customLabels: [],
+        generatedLabels: [],
         description: star.description,
         language: star.language,
       };

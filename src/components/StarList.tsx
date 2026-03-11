@@ -1,16 +1,5 @@
 import React, { useState, useMemo, useCallback } from "react";
-import Input from "tdesign-react/es/input";
-import Select from "tdesign-react/es/select";
-import Space from "tdesign-react/es/space";
-import Loading from "tdesign-react/es/loading";
-import Button from "tdesign-react/es/button";
-import { MessagePlugin } from "tdesign-react/es/message";
-import "tdesign-react/es/input/style/css.js";
-import "tdesign-react/es/select/style/css.js";
-import "tdesign-react/es/space/style/css.js";
-import "tdesign-react/es/loading/style/css.js";
-import "tdesign-react/es/button/style/css.js";
-import "tdesign-react/es/message/style/css.js";
+import { Input, Select, Space, Loading, Button, MessagePlugin } from "tdesign-react";
 import { useAppStore } from "../stores/app";
 import { StarCard } from "./StarCard";
 import { LabelSelect, NO_LABEL_ID } from "./LabelSelect";
@@ -19,7 +8,7 @@ import { chat, ChatResponse } from "../api/server";
 type SortBy = "updated" | "name" | "stars";
 
 export const StarList: React.FC = () => {
-  const { stars, loadingStars, labels, repos } = useAppStore();
+  const { stars, loadingStars, labels, repos, getRepoLabels } = useAppStore();
   const [search, setSearch] = useState("");
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState<string>("");
@@ -54,7 +43,7 @@ export const StarList: React.FC = () => {
     try {
       // 构建项目列表文档
       const projectDocs = stars.slice(0, 100).map(repo => {
-        const repoLabels = repos[repo.full_name]?.labels || [];
+        const repoLabels = getRepoLabels(repo.full_name);
         const labelNames = repoLabels
           .map(id => labels.find(l => l.id === id)?.name)
           .filter(Boolean)
@@ -132,7 +121,7 @@ ${projectDocs.join("\n")}`;
       const regularLabelIds = selectedLabels.filter((id) => id !== NO_LABEL_ID);
 
       result = result.filter((repo) => {
-        const repoLabelIds = repos[repo.full_name]?.labels || [];
+        const repoLabelIds = getRepoLabels(repo.full_name);
 
         // 如果选择了"未设标签"
         if (hasNoLabel) {

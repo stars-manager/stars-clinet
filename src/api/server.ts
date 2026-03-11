@@ -18,13 +18,22 @@ export interface StarsTagsRequest {
   projects: ProjectInfoForTags[];
 }
 
-// 标签生成响应
-export interface StarsTagsResponse {
+// 项目标签信息
+export interface ProjectTags {
+  name: string;
   summary: string;
   tags: string[];
-  tag_count: number;
-  project_count: number;
-  process_time: string;
+}
+
+// 标签生成响应
+export interface StarsTagsResponse {
+  code: number;
+  message: string;
+  data: {
+    projects: ProjectTags[];
+    project_count: number;
+    process_time: number;
+  };
 }
 
 // 对话请求

@@ -1,7 +1,5 @@
 import React from 'react';
 import { Select, Tag } from 'tdesign-react';
-import 'tdesign-react/es/select/style/css.js';
-import 'tdesign-react/es/tag/style/css.js';
 import { Label } from '../types';
 
 // 特殊 ID：表示"未设标签"
@@ -35,7 +33,22 @@ export const LabelSelect: React.FC<LabelSelectProps> = ({
         ]
       : []),
     ...labels.map((label) => ({
-      label: label.name,
+      label: (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div
+            style={{
+              width: '14px',
+              height: '14px',
+              backgroundColor: label.color,
+              borderRadius: '2px',
+              flexShrink: 0,
+            }}
+          />
+          <span>
+            {label.type === 'generated' && '✨ '}{label.name}
+          </span>
+        </div>
+      ),
       value: label.id,
     })),
   ];
@@ -87,7 +100,7 @@ export const LabelSelect: React.FC<LabelSelectProps> = ({
                   border: 'none',
                 }}
               >
-                {label.name}
+                {label.type === 'generated' && '✨ '}{label.name}
               </Tag>
             ))}
           </div>

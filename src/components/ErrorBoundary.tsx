@@ -1,54 +1,67 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { Button } from 'tdesign-react';
 
-interface Props {
+interface ErrorBoundaryProps {
   children: ReactNode;
+  fallback?: ReactNode;
 }
 
-interface State {
+interface ErrorBoundaryState {
   hasError: boolean;
-  error: Error | null;
+  error?: Error;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false,
-    error: null,
-  };
+export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
-  public static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Error caught by boundary:', error, errorInfo);
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
   }
 
-  public render() {
+  handleReset = () => {
+    this.setState({ hasError: false, error: undefined });
+  };
+
+  render() {
     if (this.state.hasError) {
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
       return (
-        <div style={{ 
-          padding: '20px', 
-          textAlign: 'center',
-          color: '#E34D59',
-          background: '#fff',
-          borderRadius: '8px',
-          margin: '20px'
-        }}>
-          <h2>出错了</h2>
-          <p style={{ color: '#666' }}>{this.state.error?.message || '未知错误'}</p>
-          <button 
-            onClick={() => this.setState({ hasError: false, error: null })}
-            style={{
-              padding: '8px 16px',
-              background: '#0052D9',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            重试
-          </button>
+        <div
+          style={{
+            padding: '40px',
+            textAlign: 'center',
+            minHeight: '200px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '16px',
+          }}
+        >
+          <div style={{ fontSize: '48px' }}>⚠️</div>
+          <h2 style={{ margin: 0, color: '#333' }}>出错了</h2>
+          <p style={{ margin: 0, color: '#666', maxWidth: '400px' }}>
+            {this.state.error?.message || '页面遇到了一些问题，请刷新页面重试'}
+          </p>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <Button onClick={this.handleReset}>重试</Button>
+            <Button
+              theme="primary"
+              onClick={() => window.location.reload()}
+            >
+              刷新页面
+            </Button>
+          </div>
         </div>
       );
     }
@@ -56,3 +69,19 @@ export class ErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
+
+// 高阶组件包装器
+export const withErrorBoundary = <P extends object>(
+  WrappedComponent: React.ComponentType<P>,
+  fallback?: ReactNode
+) => {
+  const WithErrorBoundaryComponent = (props: P) => (
+    <ErrorBoundary fallback={fallback}>
+      <WrappedComponent {...props} />
+    </ErrorBoundary>
+  );
+
+  WithErrorBoundaryComponent.displayName = `WithErrorBoundary(${WrappedComponent.displayName || WrappedComponent.name || 'Component'})`;
+
+  return WithErrorBoundaryComponent;
+};

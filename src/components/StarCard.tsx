@@ -1,10 +1,5 @@
-import React, { useState } from 'react';
-import Tag from 'tdesign-react/es/tag';
-import Space from 'tdesign-react/es/space';
-import Button from 'tdesign-react/es/button';
-import 'tdesign-react/es/tag/style/css.js';
-import 'tdesign-react/es/space/style/css.js';
-import 'tdesign-react/es/button/style/css.js';
+import React, { useState, memo, useMemo } from 'react';
+import { Tag, Space, Button } from 'tdesign-react';
 import { GitHubRepo, Label } from '../types';
 import { useAppStore } from '../stores/app';
 import { LabelSelector } from './LabelSelector';
@@ -13,16 +8,21 @@ interface StarCardProps {
   repo: GitHubRepo;
 }
 
-export const StarCard: React.FC<StarCardProps> = ({ repo }) => {
+// 使用 React.memo 优化性能，只在 repo 变化时重新渲染
+export const StarCard: React.FC<StarCardProps> = memo(({ repo }) => {
   const { labels, getRepoLabels, getRepoRemark } = useAppStore();
   const [showLabelSelector, setShowLabelSelector] = useState(false);
 
   const repoLabelIds = getRepoLabels(repo.full_name);
-  const repoLabels = repoLabelIds.map(id => labels.find(l => l.id === id)).filter(Boolean) as Label[];
+  const repoLabels = useMemo(() => 
+    repoLabelIds.map(id => labels.find(l => l.id === id)).filter(Boolean) as Label[],
+    [repoLabelIds, labels]
+  );
   const remark = getRepoRemark(repo.full_name);
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
+  // 使用 useMemo 缓存格式化函数的结果
+  const formattedDate = useMemo(() => {
+    const date = new Date(repo.updated_at);
     const now = new Date();
     const diff = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
     if (diff === 0) return '今天';
@@ -31,14 +31,14 @@ export const StarCard: React.FC<StarCardProps> = ({ repo }) => {
     if (diff < 30) return `${Math.floor(diff / 7)}周前`;
     if (diff < 365) return `${Math.floor(diff / 30)}月前`;
     return `${Math.floor(diff / 365)}年前`;
-  };
+  }, [repo.updated_at]);
 
-  const formatStars = (count: number) => {
-    if (count >= 1000) {
-      return `${(count / 1000).toFixed(1)}k`;
+  const formattedStars = useMemo(() => {
+    if (repo.stargazers_count >= 1000) {
+      return `${(repo.stargazers_count / 1000).toFixed(1)}k`;
     }
-    return count.toString();
-  };
+    return repo.stargazers_count.toString();
+  }, [repo.stargazers_count]);
 
   return (
     <>
@@ -75,9 +75,9 @@ export const StarCard: React.FC<StarCardProps> = ({ repo }) => {
             </p>
 
             <Space size="small">
-              <span>⭐ {formatStars(repo.stargazers_count)}</span>
+              <span>⭐ {formattedStars}</span>
               {repo.language && <span>● {repo.language}</span>}
-              <span>📅 {formatDate(repo.updated_at)}</span>
+              <span>📅 {formattedDate}</span>
             </Space>
           </div>
 
@@ -118,7 +118,7 @@ export const StarCard: React.FC<StarCardProps> = ({ repo }) => {
                       border: 'none',
                     }}
                   >
-                    {label.name}
+                    {label.type === 'generated' && '✨ '}{label.name}
                   </Tag>
                 ))}
               </div>
@@ -135,4 +135,4 @@ export const StarCard: React.FC<StarCardProps> = ({ repo }) => {
       )}
     </>
   );
-};
+});
