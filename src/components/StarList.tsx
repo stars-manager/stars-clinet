@@ -6,6 +6,7 @@ import { LabelSelect, NO_LABEL_ID } from "./LabelSelect";
 import { SmartMatcher } from "./SmartMatcher";
 import { FilterPanel, AdvancedFilter } from "./FilterPanel";
 import { BatchActions } from "./BatchActions";
+import { VirtualList } from "./VirtualList";
 
 type SortBy = "updated" | "name" | "stars";
 
@@ -243,9 +244,12 @@ export const StarList: React.FC = () => {
           {stars.length === 0 ? "暂无 Stars，请先同步" : "没有匹配的项目"}
         </div>
       ) : (
-        filteredStars.map((repo) => (
-          <StarCard key={repo.full_name} repo={repo} />
-        ))
+        <VirtualList
+          items={filteredStars}
+          height={800}
+          itemHeight={200}
+          renderItem={(repo) => <StarCard key={repo.full_name} repo={repo} />}
+        />
       )}
 
       {/* 批量操作工具栏 */}

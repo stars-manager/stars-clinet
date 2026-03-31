@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Radio, Select, Input, Button, MessagePlugin } from 'tdesign-react';
 import { useAppStore } from '../stores/app';
-import { getUserRepos, createRepo, RepoInfo } from '../api/github';
+import { getUserRepos, createRepo, RepoInfo } from '../api/github-proxy';
 
 interface RepoSelectorProps {
   value: string;
@@ -20,7 +20,7 @@ export const RepoSelector: React.FC<RepoSelectorProps> = ({
   onConfirm,
   currentSyncRepo 
 }) => {
-  const { token } = useAppStore();
+  const { isAuthenticated } = useAppStore();
   const [mode, setMode] = useState<'select' | 'create'>('select');
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string>(value);
@@ -32,7 +32,7 @@ export const RepoSelector: React.FC<RepoSelectorProps> = ({
   const loadRepos = useCallback(async () => {
     setLoadingRepos(true);
     try {
-      const userRepos = await getUserRepos(token);
+      const userRepos = await getUserRepos();
       setRepos(userRepos);
 
       // 刷新后恢复到已确认的仓库
@@ -45,13 +45,13 @@ export const RepoSelector: React.FC<RepoSelectorProps> = ({
     } finally {
       setLoadingRepos(false);
     }
-  }, [token, confirmedValue, onChange]);
+  }, [confirmedValue, onChange]);
 
   useEffect(() => {
-    if (token) {
+    if (isAuthenticated) {
       loadRepos();
     }
-  }, [token, loadRepos]);
+  }, [isAuthenticated, loadRepos]);
 
   useEffect(() => {
     setSelectedRepo(value);
@@ -77,7 +77,7 @@ export const RepoSelector: React.FC<RepoSelectorProps> = ({
     }
 
     try {
-      const repo = await createRepo(token, newRepoName.trim(), isPrivate);
+      const repo = await createRepo(newRepoName.trim(), isPrivate);
       MessagePlugin.success(`仓库 ${repo.full_name} 创建成功`);
       
       // 重新加载仓库列表

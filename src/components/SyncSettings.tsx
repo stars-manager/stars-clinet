@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Dialog, Radio, Select, Input, Button, MessagePlugin } from 'tdesign-react';
 import { useAppStore } from '../stores/app';
-import { getUserRepos, createRepo, RepoInfo } from '../api/github';
+import { getUserRepos, createRepo, RepoInfo } from '../api/github-proxy';
 
 interface SyncSettingsProps {
   visible: boolean;
@@ -9,7 +9,7 @@ interface SyncSettingsProps {
 }
 
 export const SyncSettings: React.FC<SyncSettingsProps> = ({ visible, onClose }) => {
-  const { token, syncRepo, setSyncRepo } = useAppStore();
+  const { isAuthenticated, syncRepo, setSyncRepo } = useAppStore();
   const [mode, setMode] = useState<'select' | 'create'>('select');
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string>(syncRepo);
@@ -22,20 +22,20 @@ export const SyncSettings: React.FC<SyncSettingsProps> = ({ visible, onClose }) 
   const loadRepos = useCallback(async () => {
     setLoadingRepos(true);
     try {
-      const userRepos = await getUserRepos(token);
+      const userRepos = await getUserRepos();
       setRepos(userRepos);
     } catch {
       MessagePlugin.error('获取仓库列表失败');
     } finally {
       setLoadingRepos(false);
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
-    if (visible && token) {
+    if (visible && isAuthenticated) {
       loadRepos();
     }
-  }, [visible, token, loadRepos]);
+  }, [visible, isAuthenticated, loadRepos]);
 
   const handleConfirm = async () => {
     setLoading(true);
@@ -57,7 +57,7 @@ export const SyncSettings: React.FC<SyncSettingsProps> = ({ visible, onClose }) 
           return;
         }
         
-        const repo = await createRepo(token, newRepoName.trim(), isPrivate);
+        const repo = await createRepo(newRepoName.trim(), isPrivate);
         MessagePlugin.success(`仓库 ${repo.full_name} 创建成功`);
         
         // 重新加载仓库列表

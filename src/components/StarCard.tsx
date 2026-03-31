@@ -1,4 +1,4 @@
-import React, { useState, memo, useMemo } from 'react';
+import React, { useState, memo, useCallback } from 'react';
 import { Tag, Button } from 'tdesign-react';
 import { GitHubRepo, Label } from '../types';
 import { useAppStore } from '../stores/app';
@@ -10,13 +10,18 @@ interface StarCardProps {
 
 // 使用 React.memo 优化性能，只在 repo 变化时重新渲染
 export const StarCard: React.FC<StarCardProps> = memo(({ repo }) => {
-  const { labels, getRepoLabels, getRepoRemark } = useAppStore();
+  const getRepoRemark = useAppStore(state => state.getRepoRemark);
   const [showLabelSelector, setShowLabelSelector] = useState(false);
 
-  const repoLabelIds = getRepoLabels(repo.full_name);
-  const repoLabels = useMemo(() => 
-    repoLabelIds.map(id => labels.find(l => l.id === id)).filter(Boolean) as Label[],
-    [repoLabelIds, labels]
+  // 使用 Zustand 选择器直接获取计算后的标签数据，避免不必要的重渲染
+  const repoLabels = useAppStore(
+    useCallback(state => {
+      const repoLabelIds = [
+        ...(state.repos[repo.full_name]?.customLabels || []),
+        ...(state.repos[repo.full_name]?.generatedLabels || [])
+      ];
+      return repoLabelIds.map(id => state.labels.find(l => l.id === id)).filter(Boolean) as Label[];
+    }, [repo.full_name])
   );
   const remark = getRepoRemark(repo.full_name);
 

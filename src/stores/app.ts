@@ -1,7 +1,8 @@
 import { create, StateCreator } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { GitHubRepo, Label, Repos } from '../types';
-import { verifyToken, fetchAllStars, getFile, createOrUpdateFile, getFileContent } from '../api/github';
+import { fetchAllStars, getFile, createOrUpdateFile, getFileContent } from '../api/github-proxy';
+import { logout as logoutAPI, getCurrentUser } from '../api/auth';
 import { generateId } from '../utils/storage';
 import { generateReadme, generateJson } from '../utils/markdown';
 import { mergeStarsData, parseSyncData, MergeStats } from '../utils/dataMerge';
@@ -18,8 +19,7 @@ export interface PendingTagChange {
 
 interface AppState {
   // State
-  token: string;
-  username: string;
+  isAuthenticated: boolean;
   user: { login: string; avatar_url: string } | null;
   stars: GitHubRepo[];
   loadingStars: boolean;
@@ -35,7 +35,7 @@ interface AppState {
   batchMode: boolean;
 
   // Actions
-  setToken: (token: string) => Promise<void>;
+  checkAuth: () => Promise<void>;
   fetchStars: () => Promise<MergeStats | void>;
   addLabel: (name: string, color: string, type?: 'custom' | 'generated') => void;
   updateLabel: (id: string, name: string, color: string) => void;
@@ -50,7 +50,7 @@ interface AppState {
   setShowFetchStarsModal: (show: boolean) => void;
   setActiveTab: (tab: 'stars' | 'labels') => void;
   syncToRepo: () => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   findOrCreateLabelByName: (name: string, type: 'custom' | 'generated') => string;
   // 批量操作
   toggleBatchMode: () => void;
@@ -65,8 +65,7 @@ interface AppState {
 
 const stateCreator: StateCreator<AppState> = (set, get) => ({
   // Initial State
-  token: '',
-  username: '',
+  isAuthenticated: false,
   user: null,
   stars: [],
   loadingStars: false,
@@ -81,23 +80,28 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
   batchMode: false,
 
   // Actions
-  setToken: async (newToken: string) => {
-    const userData = await verifyToken(newToken);
-    set({
-      token: newToken,
-      username: userData.login,
-      user: { login: userData.login, avatar_url: userData.avatar_url },
-    });
+  checkAuth: async () => {
+    try {
+      const userData = await getCurrentUser();
+      if (userData) {
+        set({
+          isAuthenticated: true,
+          user: { login: userData.login, avatar_url: userData.avatar_url },
+        });
+      }
+    } catch {
+      set({ isAuthenticated: false, user: null });
+    }
   },
 
   fetchStars: async () => {
-    const { token, username, repos, labels, syncRepo } = get();
-    if (!token || !username) return;
+    const { user, repos, labels, syncRepo } = get();
+    if (!user) return;
 
     set({ loadingStars: true });
     try {
-      // 1. 从 GitHub API 获取最新 Stars
-      const allStars = await fetchAllStars(token, username);
+      // 1. 从后端代理获取最新 Stars
+      const allStars = await fetchAllStars(user.login);
       
       // 2. 如果配置了同步仓库，尝试从仓库读取 JSON 数据
       let localRepos = repos;
@@ -106,7 +110,7 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
       if (syncRepo) {
         try {
           const [owner, repo] = syncRepo.split('/');
-          const fileData = await getFileContent(token, owner, repo, 'stars.json');
+          const fileData = await getFileContent(owner, repo, 'stars.json');
           
           if (fileData) {
             const syncData = parseSyncData(fileData.content);
@@ -243,10 +247,10 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
   },
 
   syncToRepo: async () => {
-    const { token, syncRepo, stars, labels, repos } = get();
+    const { syncRepo, stars, labels, repos, isAuthenticated } = get();
     
-    if (!token) {
-      throw new Error('请先设置 Token');
+    if (!isAuthenticated) {
+      throw new Error('请先登录');
     }
     
     if (!syncRepo) {
@@ -265,11 +269,10 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
       
       const jsonContent = generateJson(stars, labels, repos);
       
-      const existingJson = await getFile(token, owner, repo, 'stars.json');
+      const existingJson = await getFile(owner, repo, 'stars.json');
       const jsonSha = existingJson?.sha;
       
       await createOrUpdateFile(
-        token,
         owner,
         repo,
         'stars.json',
@@ -280,11 +283,10 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
       
       const readmeContent = generateReadme(stars, labels, repos);
       
-      const existingReadme = await getFile(token, owner, repo, 'README.md');
+      const existingReadme = await getFile(owner, repo, 'README.md');
       const readmeSha = existingReadme?.sha;
       
       await createOrUpdateFile(
-        token,
         owner,
         repo,
         'README.md',
@@ -294,7 +296,7 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
       );
     } catch (error: unknown) {
       const err = error as Error;
-      const message = err.message || '推送失败，请检查网络或 Token 权限';
+      const message = err.message || '推送失败，请检查网络或登录状态';
       // 使用扩展 Error 类来保留 cause
       class SyncError extends Error {
         constructor(msg: string, public cause?: unknown) {
@@ -308,13 +310,14 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
     }
   },
 
-  logout: () => {
-    set({ token: '', username: '', user: null, stars: [] });
+  logout: async () => {
+    await logoutAPI();
+    set({ isAuthenticated: false, user: null, stars: [] });
   },
 
   // 查找或创建标签（根据名称）
   findOrCreateLabelByName: (name: string, type: 'custom' | 'generated'): string => {
-    const { labels, addLabel } = get();
+    const { labels } = get();
     
     // 检查是否已存在同名标签
     const existingLabel = labels.find(l => l.name === name);
@@ -322,20 +325,19 @@ const stateCreator: StateCreator<AppState> = (set, get) => ({
       return existingLabel.id;
     }
     
-    // 创建新标签
+    // 创建新标签并直接更新状态
+    const id = generateId();
     const colors = [
       '#0052D9', '#2BA47D', '#E37318', '#E34D59', '#ED7B2F',
       '#8E4EC6', '#0594FA', '#29B4BA', '#C45F9E', '#6E5FAD'
     ];
     const color = colors[Math.floor(Math.random() * colors.length)];
-    addLabel(name, color, type);
     
-    // 返回新创建的标签 ID（获取最新的）
-    const newLabels = get().labels;
-    const newLabel = newLabels.find(l => l.name === name);
+    set((state) => ({
+      labels: [...state.labels, { id, name, color, type }]
+    }));
     
-    // 如果找到了新标签,返回其 ID;否则返回最后一个标签的 ID
-    return newLabel?.id || newLabels[newLabels.length - 1]?.id || '';
+    return id;
   },
 
   // 切换批量选择模式
@@ -456,9 +458,6 @@ const persistedCreator = persist(stateCreator, {
   name: 'github-star-manager',
   storage: createJSONStorage(() => localStorage),
   partialize: (state) => ({
-    token: state.token,
-    username: state.username,
-    user: state.user,
     labels: state.labels.map(l => ({
       ...l,
       type: l.type || 'custom', // 兼容旧数据
@@ -503,7 +502,7 @@ const persistedCreator = persist(stateCreator, {
 
     return state;
   },
-  version: 1, // 版本号，用于迁移
+  version: 2, // 版本号升级，token 和 username 已移除
 });
 
 export const useAppStore = create<AppState>()(persistedCreator as StateCreator<AppState>);

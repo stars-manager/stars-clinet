@@ -13,7 +13,7 @@ export const SmartMatcher: React.FC<SmartMatcherProps> = ({ onReposMatched, onCl
   const { stars, labels, getRepoLabels } = useAppStore();
   const [inputValue, setInputValue] = useState("");
   const [matchedRepos, setMatchedRepos] = useState<string[]>([]);
-  const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+  const [sessionId] = useState(() => `session-${crypto.randomUUID()}`);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {

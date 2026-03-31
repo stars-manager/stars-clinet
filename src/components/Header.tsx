@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { Button, Input, Space, Dialog, Tag, MessagePlugin, Dropdown, Popup, DropdownOption } from 'tdesign-react';
+import React, { useState, useEffect } from 'react';
+import { Button, Space, Dialog, Tag, MessagePlugin, Dropdown, Popup, DropdownOption } from 'tdesign-react';
 import { useAppStore } from '../stores/app';
 import { SyncSettings } from './SyncSettings';
 import { AutoTagger } from './AutoTagger';
 import { calculateIncrementalChanges, formatChangeSummary, IncrementalStats } from '../utils/incrementalChanges';
+import { getLoginURL } from '../api/auth';
 
 interface HeaderProps {
   onOpenLabelManager: () => void;
@@ -12,7 +13,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ onOpenLabelManager }) => {
   const store = useAppStore();
   const {
-    token,
+    isAuthenticated,
     user,
     fetchStars,
     loadingStars,
@@ -21,39 +22,60 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLabelManager }) => {
     syncRepo,
     stars,
     lastSyncTime,
+    checkAuth,
+    logout,
   } = store;
 
-  const [showTokenModal, setShowTokenModal] = useState(false);
   const [showSyncSettings, setShowSyncSettings] = useState(false);
   const [showPushConfirm, setShowPushConfirm] = useState(false);
   const [showAutoTagger, setShowAutoTagger] = useState(false);
   const [showSyncConfirm, setShowSyncConfirm] = useState(false);
-  const [inputToken, setInputToken] = useState(token);
+  const [showLoginConfirm, setShowLoginConfirm] = useState(false);
   const [incrementalStats, setIncrementalStats] = useState<IncrementalStats | null>(null);
 
-  // 设置下拉菜单选项
-  const settingsOptions = [
-    { content: '设置 Token', value: 'token' },
-    { content: '标签设置', value: 'labels' },
-    { content: '同步设置', value: 'sync' },
-  ];
+  // 初始化时检查认证状态
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
-  // 打开 Token 弹窗时，回显已保存的 token
-  const handleOpenTokenModal = () => {
-    setInputToken(token);
-    setShowTokenModal(true);
+  // 设置下拉菜单选项
+  const settingsOptions = isAuthenticated
+    ? [
+        { content: '标签设置', value: 'labels' },
+        { content: '同步设置', value: 'sync' },
+        { content: '登出', value: 'logout' },
+      ]
+    : [];
+
+  // 登录处理
+  const handleLogin = async () => {
+    try {
+      const response = await getLoginURL();
+      window.location.href = response.auth_url;
+    } catch {
+      MessagePlugin.error('获取登录地址失败');
+    }
+  };
+
+  // 登出处理
+  const handleLogout = async () => {
+    try {
+      await logout();
+      MessagePlugin.success('已登出');
+    } catch {
+      MessagePlugin.error('登出失败');
+    }
   };
 
   // 同步 Stars - 预处理检查
   const handleSyncStars = () => {
-    if (!token) {
-      MessagePlugin.warning('请先设置 Token');
-      handleOpenTokenModal();
+    if (!isAuthenticated) {
+      MessagePlugin.warning('请先登录');
+      setShowLoginConfirm(true);
       return;
     }
     if (!user?.login) {
-      MessagePlugin.warning('请先设置有效的 Token');
-      handleOpenTokenModal();
+      MessagePlugin.warning('用户信息加载失败，请重新登录');
       return;
     }
     if (!syncRepo) {
@@ -103,9 +125,9 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLabelManager }) => {
 
   // 推送到仓库 - 打开确认弹窗
   const handlePushToRepo = async () => {
-    if (!token) {
-      MessagePlugin.warning('请先设置 Token');
-      handleOpenTokenModal();
+    if (!isAuthenticated) {
+      MessagePlugin.warning('请先登录');
+      setShowLoginConfirm(true);
       return;
     }
     
@@ -124,12 +146,12 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLabelManager }) => {
     // 计算增量信息
     try {
       // 从仓库读取当前数据
-      const { getFileContent } = await import('../api/github');
+      const { getFileContent } = await import('../api/github-proxy');
       const { parseSyncData } = await import('../utils/dataMerge');
       const [owner, repo] = syncRepo.split('/');
       
       let remoteRepos = {};
-      const fileData = await getFileContent(token, owner, repo, 'stars.json');
+      const fileData = await getFileContent(owner, repo, 'stars.json');
       
       if (fileData) {
         const syncData = parseSyncData(fileData.content);
@@ -162,35 +184,18 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLabelManager }) => {
     }
   };
 
-  // 保存 Token
-  const handleSaveToken = async () => {
-    if (!inputToken.trim()) {
-      MessagePlugin.error('请输入 Token');
-      return;
-    }
-
-    try {
-      await store.setToken(inputToken.trim());
-      MessagePlugin.success('Token 验证成功');
-      setInputToken('');
-      setShowTokenModal(false);
-    } catch {
-      MessagePlugin.error('Token 验证失败，请检查');
-    }
-  };
-
   // 处理设置菜单点击
   const handleSettingsClick = (dropdownItem: DropdownOption) => {
     const value = dropdownItem.value as string;
     switch (value) {
-      case 'token':
-        handleOpenTokenModal();
-        break;
       case 'labels':
         onOpenLabelManager();
         break;
       case 'sync':
         setShowSyncSettings(true);
+        break;
+      case 'logout':
+        handleLogout();
         break;
     }
   };
@@ -212,7 +217,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLabelManager }) => {
         <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#0052cc' }}>
           ⭐ GitHub Star Manager
         </h1>
-        {user && (
+        {isAuthenticated && user && (
           <Space size="small">
             <img src={user.avatar_url} alt={user.login} style={{ width: '24px', height: '24px', borderRadius: '50%' }} />
             <span style={{ fontSize: '14px', color: '#666' }}>{user.login}</span>
@@ -242,70 +247,64 @@ export const Header: React.FC<HeaderProps> = ({ onOpenLabelManager }) => {
           </Popup>
         )}
         
-        {/* 主要操作按钮 */}
-        <Button onClick={handleSyncStars} loading={loadingStars} title="从 GitHub 拉取最新的 Stars 列表">
-          同步 Stars
-        </Button>
-        <Button 
-          theme="primary"
-          onClick={() => setShowAutoTagger(true)} 
-          title="使用 AI 自动为项目生成标签"
-          disabled={stars.length === 0}
-        >
-          自动标签
-        </Button>
-        {syncRepo && (
-          <Button onClick={handlePushToRepo} loading={syncing} title="将 Stars 数据推送到选定的仓库">
-            推送
+        {/* 登录/操作按钮 */}
+        {!isAuthenticated ? (
+          <Button 
+            theme="primary" 
+            onClick={() => setShowLoginConfirm(true)}
+            title="使用 GitHub 账号登录"
+          >
+            GitHub 登录
           </Button>
-        )}
+        ) : (
+          <>
+            <Button onClick={handleSyncStars} loading={loadingStars} title="从 GitHub 拉取最新的 Stars 列表">
+              同步 Stars
+            </Button>
+            <Button 
+              theme="primary"
+              onClick={() => setShowAutoTagger(true)} 
+              title="使用 AI 自动为项目生成标签"
+              disabled={stars.length === 0}
+            >
+              自动标签
+            </Button>
+            {syncRepo && (
+              <Button onClick={handlePushToRepo} loading={syncing} title="将 Stars 数据推送到选定的仓库">
+                推送
+              </Button>
+            )}
 
-        {/* 设置下拉菜单 */}
-        <Dropdown 
-          options={settingsOptions} 
-          onClick={handleSettingsClick}
-          placement="bottom-right"
-        >
-          <Button variant="outline" icon={<span>⚙️</span>}>
-            设置
-          </Button>
-        </Dropdown>
+            {/* 设置下拉菜单 */}
+            <Dropdown 
+              options={settingsOptions} 
+              onClick={handleSettingsClick}
+              placement="bottom-right"
+            >
+              <Button variant="outline" icon={<span>⚙️</span>}>
+                设置
+              </Button>
+            </Dropdown>
+          </>
+        )}
       </Space>
 
-      {/* 设置 Token 弹窗 */}
+      {/* 登录确认弹窗 */}
       <Dialog
-        header="设置 GitHub Token"
-        visible={showTokenModal}
-        onConfirm={handleSaveToken}
-        onClose={() => setShowTokenModal(false)}
+        header="GitHub 登录"
+        visible={showLoginConfirm}
+        onConfirm={handleLogin}
+        onClose={() => setShowLoginConfirm(false)}
+        confirmBtn={{ content: '前往 GitHub 授权', theme: 'primary' }}
+        cancelBtn="取消"
       >
         <div style={{ padding: '12px 0' }}>
           <p style={{ marginBottom: '12px', color: '#666' }}>
-            输入 GitHub Personal Access Token 用于访问你的 Stars 和仓库
+            即将跳转到 GitHub 进行 OAuth 授权登录
           </p>
-          <div style={{ marginBottom: '12px' }}>
-            <div style={{ marginBottom: '8px', fontSize: '14px', color: '#666' }}>
-              GitHub Token：
-            </div>
-            <Input
-              value={inputToken}
-              onChange={(value) => setInputToken(value)}
-              placeholder="ghp_xxxxxxxxxxxx"
-              type="password"
-              style={{ width: '100%' }}
-            />
-          </div>
-          <p style={{ fontSize: '12px', color: '#999', marginBottom: '12px' }}>
-            权限要求: <code>read:user</code> <code>repo</code>
+          <p style={{ fontSize: '12px', color: '#999' }}>
+            授权后，您可以使用 GitHub Stars 管理功能
           </p>
-          <a
-            href="https://github.com/settings/tokens/new?scopes=repo,read:user&description=GitHub%20Star%20Manager"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ fontSize: '14px', color: '#0052cc' }}
-          >
-            → 点击创建 Token
-          </a>
         </div>
       </Dialog>
 

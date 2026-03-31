@@ -88,70 +88,39 @@ const MainContent: React.FC = () => {
 };
 
 const App: React.FC = () => {
-  const { token, logout, user } = useAppStore();
-  const [verifying, setVerifying] = useState(false);
-  const hasShownWelcome = useRef(false); // 避免在 StrictMode 下重复提示
-  const hasCheckedToken = useRef(false); // 避免在 StrictMode 下重复验证和提示
+  const { checkAuth, isAuthenticated } = useAppStore();
+  const [checking, setChecking] = useState(true);
+  const hasShownWelcome = useRef(false);
 
-  // 应用启动时验证 token 是否有效
+  // 应用启动时检查认证状态
   useEffect(() => {
-    const verifyTokenOnStartup = async () => {
-      // 没有 token 的情况
-      if (!token) {
-        if (!hasShownWelcome.current) {
-          hasShownWelcome.current = true;
-          setTimeout(() => {
-            MessagePlugin.info({
-              content: '欢迎使用 GitHub Star Manager！请先设置 GitHub Token 开始使用',
-              duration: 5000,
-            });
-          }, 500);
-        }
-        return;
-      }
-
-      if (hasCheckedToken.current) return;
-      hasCheckedToken.current = true;
-
-      // 有 token 但没有 user 信息，需要重新获取
-      if (!user?.login) {
-        setVerifying(true);
-        try {
-          const response = await fetch('https://api.github.com/user', {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: 'application/vnd.github.v3+json',
-            },
-          });
-
-          if (response.ok) {
-            // Token 有效，更新 user 信息
-            const userData = await response.json();
-            useAppStore.setState({
-              user: {
-                login: userData.login,
-                avatar_url: userData.avatar_url,
-              },
-              username: userData.login,
-            });
-          } else {
-            // Token 无效，清除登录状态
-            logout();
-            MessagePlugin.warning('Token 已失效，请重新设置');
-          }
-        } catch (error) {
-          // 网络错误，不清理 token，让用户继续使用
-          console.error('Token verification failed:', error);
-        } finally {
-          setVerifying(false);
-        }
+    const initAuth = async () => {
+      try {
+        await checkAuth();
+      } catch {
+        // 未登录或认证失败，静默处理
+      } finally {
+        setChecking(false);
       }
     };
 
-    verifyTokenOnStartup();
-  }, [token, logout, user]);
+    initAuth();
+  }, [checkAuth]);
 
-  if (verifying) {
+  // 显示欢迎提示（未登录时）
+  useEffect(() => {
+    if (!checking && !isAuthenticated && !hasShownWelcome.current) {
+      hasShownWelcome.current = true;
+      setTimeout(() => {
+        MessagePlugin.info({
+          content: '欢迎使用 GitHub Star Manager！请先登录 GitHub 开始使用',
+          duration: 5000,
+        });
+      }, 500);
+    }
+  }, [checking, isAuthenticated]);
+
+  if (checking) {
     return (
       <div style={{
         display: 'flex',
@@ -161,7 +130,7 @@ const App: React.FC = () => {
         fontSize: '16px',
         color: '#666'
       }}>
-        正在验证登录状态...
+        正在检查登录状态...
       </div>
     );
   }

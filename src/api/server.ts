@@ -1,5 +1,6 @@
 // 后端服务 API 调用
 // 开发环境通过 Vite 代理访问，生产环境使用相对路径
+import { serverApiClient, ApiError } from '../services/apiClient';
 
 // 项目信息（用于标签生成）
 export interface ProjectInfoForTags {
@@ -53,50 +54,40 @@ export interface ChatResponse {
   process_time: string;
 }
 
-// 为项目生成标签
+// 为项目生成标签（使用 ApiClient）
 export async function generateStarsTags(request: StarsTagsRequest): Promise<StarsTagsResponse> {
-  const response = await fetch('/api/v1/stars/tags', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: '请求失败' }));
-    throw new Error(error.message || `HTTP ${response.status}`);
+  try {
+    return await serverApiClient.post<StarsTagsResponse>('/api/v1/stars/tags', request);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw new Error(error.message);
+    }
+    throw error;
   }
-
-  return response.json();
 }
 
-// 智能对话
+// 智能对话（使用 ApiClient）
 export async function chat(request: ChatRequest): Promise<ChatResponse> {
-  const response = await fetch('/api/v1/chat/message', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: '请求失败' }));
-    throw new Error(error.message || `HTTP ${response.status}`);
+  try {
+    return await serverApiClient.post<ChatResponse>('/api/v1/chat/message', request);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw new Error(error.message);
+    }
+    throw error;
   }
-
-  return response.json();
 }
 
-// 清除会话
+// 清除会话（使用 ApiClient）
 export async function clearChatSession(sessionId: string): Promise<void> {
-  const response = await fetch(`/api/v1/chat/session/${sessionId}`, {
-    method: 'DELETE',
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: '请求失败' }));
-    throw new Error(error.message || `HTTP ${response.status}`);
+  try {
+    await serverApiClient.delete(`/api/v1/chat/session/${sessionId}`);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw new Error(error.message);
+    }
+    throw error;
+  }
+}
   }
 }
