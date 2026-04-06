@@ -85,6 +85,67 @@ pnpm dev
 pnpm build
 ```
 
+## 🚀 部署方式
+
+### 方式 1：前后端同域部署（推荐）⭐
+
+**优点**：
+- 无需配置 CORS
+- 前端使用相对路径 `/api`
+- 由 Nginx 代理到真实后端地址
+- 最简单、最灵活
+
+**部署架构**：
+```
+用户访问：https://your-domain.com
+    ↓
+前端页面：https://your-domain.com/
+    ↓
+API 请求：https://your-domain.com/api/v1/stars
+    ↓
+Nginx 代理：转发到后端服务
+```
+
+**Nginx 配置示例**：
+
+参考 `nginx.conf.example` 文件，关键配置：
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    # 前端静态文件
+    location / {
+        root /usr/share/nginx/html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 后端 API 代理（可随时修改后端地址）
+    location /api {
+        proxy_pass http://localhost:8080;
+        # 或 Docker 容器：proxy_pass http://stars-server:8080;
+    }
+}
+```
+
+**优势**：
+- ✅ 前端代码无需修改
+- ✅ 只需修改 Nginx 配置即可切换后端
+- ✅ 不需要重新构建镜像
+
+---
+
+### 方式 2：前后端分离部署
+
+如果前后端在不同域名，需配置 CNB Secret：
+
+```
+CNB Secrets:
+  Name:  VITE_API_BASE_URL
+  Value: https://api.example.com
+```
+
 ## 🛠️ 技术栈
 
 ### 前端

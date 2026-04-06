@@ -10,8 +10,8 @@
 
 // API 配置
 export const API_CONFIG = {
-  // 后端服务地址
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080',
+  // 后端服务地址（默认使用相对路径，由 Nginx 代理）
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   
   // 请求超时时间（毫秒）
   timeout: 30000,
@@ -147,22 +147,9 @@ export const FEATURE_FLAGS = {
   enableAdvancedFilter: true,
 } as const;
 
-// 日志配置
-export const LOG_CONFIG = {
-  // 是否启用日志
-  enabled: import.meta.env.DEV,
-  
-  // 日志级别
-  level: import.meta.env.DEV ? 'debug' : 'error',
-  
-  // 是否在控制台输出
-  console: import.meta.env.DEV,
-} as const;
-
 // 类型导出
 export type ApiConfig = typeof API_CONFIG;
 export type UiConfig = typeof UI_CONFIG;
 export type ErrorMessages = typeof ERROR_MESSAGES;
 export type SuccessMessages = typeof SUCCESS_MESSAGES;
 export type FeatureFlags = typeof FEATURE_FLAGS;
-export type LogConfig = typeof LOG_CONFIG;

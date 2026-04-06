@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import UnoCSS from 'unocss/vite'
-import { visualizer } from 'rollup-plugin-visualizer'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -9,14 +8,7 @@ export default defineConfig({
     react(),
     // UnoCSS 插件
     UnoCSS(),
-    // Bundle 分析（仅构建时生效）
-    process.env.ANALYZE && visualizer({
-      open: true,
-      filename: 'dist/stats.html',
-      gzipSize: true,
-      brotliSize: true,
-    }),
-  ].filter(Boolean),
+  ],
 
   server: {
     port: 3000,
